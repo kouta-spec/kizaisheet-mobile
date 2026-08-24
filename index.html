@@ -55,6 +55,13 @@
     width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
     font-size: 15px; background: white;
   }
+  .gantt-actions { display: flex; gap: 8px; padding: 0 14px 10px; }
+  .gantt-actions button {
+    flex: 1; padding: 9px 0; border-radius: 8px; border: 1px solid var(--border);
+    background: white; color: var(--blue-dark); font-size: 12.5px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .gantt-actions button:disabled { opacity: 0.5; }
   #status-banner {
     display: none; margin: 0 14px 10px; padding: 10px 12px; border-radius: 8px;
     font-size: 13px; line-height: 1.5; white-space: pre-wrap;
@@ -125,6 +132,10 @@
   }
   .summary-bar b { color: var(--text); }
 
+  #equipment-detail-sticky {
+    position: sticky; top: -18px; z-index: 5; background: white;
+    margin: -18px -18px 0; padding: 18px 18px 0;
+  }
   .jump-row {
     display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 12px;
   }
@@ -229,6 +240,11 @@
 
   <div class="search-bar">
     <input type="text" id="search-input" placeholder="機材名・作品名で検索">
+  </div>
+
+  <div class="gantt-actions">
+    <button type="button" id="gantt-view-btn">📊 ガントチャート表示</button>
+    <button type="button" id="gantt-refresh-btn">🔄 ガントチャートを更新</button>
   </div>
 
   <div id="status-banner"></div>
@@ -336,12 +352,14 @@
 <!-- 機材の状況：カテゴリの詳細（グループ見出しをタップすると表示） -->
 <div class="sheet-overlay" id="equipment-detail-overlay">
   <div class="sheet">
-    <div class="sheet-header">
-      <button type="button" class="sheet-back-btn" id="equipment-detail-back">← 戻る</button>
-      <h2 id="equipment-detail-title"></h2>
+    <div id="equipment-detail-sticky">
+      <div class="sheet-header">
+        <button type="button" class="sheet-back-btn" id="equipment-detail-back">← 戻る</button>
+        <h2 id="equipment-detail-title"></h2>
+      </div>
+      <div class="hint" id="equipment-detail-summary"></div>
+      <div class="jump-row" id="equipment-detail-jump"></div>
     </div>
-    <div class="hint" id="equipment-detail-summary"></div>
-    <div class="jump-row" id="equipment-detail-jump"></div>
     <div id="equipment-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     <div class="sheet-actions">
       <button class="btn secondary" id="equipment-detail-close">閉じる</button>
@@ -1061,7 +1079,7 @@
     };
     if (editingRow) body.row = editingRow;
 
-    showLoading(editingRow ? '更新中...（機材件数が多いと時間がかかります）' : '登録中...（機材件数が多いと時間がかかります）');
+    showLoading(editingRow ? '更新中...' : '登録中...');
     apiPost(body).then(function (res) {
       hideLoading();
       if (!res.ok) {
@@ -1070,11 +1088,11 @@
       }
       closeForm();
       if (res.overlap) {
-        showBanner(res.overlapMessage + '\n\n※期間重複のため、単価・予算の更新は行われていません。', 'warn');
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
       } else if (res.warning) {
         showBanner(res.warning, 'warn');
       } else {
-        showBanner('保存しました。', 'info');
+        showBanner(res.message || '保存しました。', 'info');
         setTimeout(hideBanner, 4000);
       }
       refreshBookings();
@@ -1089,7 +1107,7 @@
     var ok = window.confirm('この予約を削除します。よろしいですか？\n（この操作は取り消せません）');
     if (!ok) return;
 
-    showLoading('削除中...（機材件数が多いと時間がかかります）');
+    showLoading('削除中...');
     apiPost({ action: 'deleteBooking', row: editingRow }).then(function (res) {
       hideLoading();
       if (!res.ok) {
@@ -1098,17 +1116,57 @@
       }
       closeForm();
       if (res.overlap) {
-        showBanner(res.overlapMessage + '\n\n※期間重複のため、単価・予算の更新は行われていません。', 'warn');
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
       } else if (res.warning) {
         showBanner(res.warning, 'warn');
       } else {
-        showBanner('予約を削除しました。', 'info');
+        showBanner(res.message || '予約を削除しました。', 'info');
         setTimeout(hideBanner, 4000);
       }
       refreshBookings();
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
+    });
+  }
+
+  // ---------- ガントチャート表示・更新 ----------
+  function openGanttChart() {
+    var btn = document.getElementById('gantt-view-btn');
+    btn.disabled = true;
+    apiGet('ganttUrl').then(function (res) {
+      btn.disabled = false;
+      if (!res.ok) {
+        showBanner('ガントチャートのURL取得に失敗しました: ' + res.error, 'error');
+        return;
+      }
+      // 新しいタブで開くので、このアプリ自体の画面や操作位置はそのまま残る
+      window.open(res.url, '_blank');
+    }).catch(function (err) {
+      btn.disabled = false;
+      showBanner('通信エラー: ' + err.message, 'error');
+    });
+  }
+
+  function refreshGanttChart() {
+    var ok = window.confirm('ガントチャートを最新の内容に更新します。\n（機材件数が多いと数十秒かかることがあります）\nよろしいですか？');
+    if (!ok) return;
+    showLoading('ガントチャートを更新中...（機材件数が多いと時間がかかります）');
+    apiPost({ action: 'refreshGantt' }).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showBanner(res.error || 'ガントチャートの更新に失敗しました', 'error');
+        return;
+      }
+      if (res.overlap) {
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
+      } else {
+        showBanner(res.message || 'ガントチャートを更新しました。', 'info');
+        setTimeout(hideBanner, 4000);
+      }
+    }).catch(function (err) {
+      hideLoading();
+      showBanner('通信エラー: ' + err.message, 'error');
     });
   }
 
@@ -1168,6 +1226,8 @@
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
   });
+  document.getElementById('gantt-view-btn').addEventListener('click', openGanttChart);
+  document.getElementById('gantt-refresh-btn').addEventListener('click', refreshGanttChart);
 
   loadSettings();
   if (hasSettings()) {
