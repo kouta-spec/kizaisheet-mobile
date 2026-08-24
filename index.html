@@ -98,6 +98,30 @@
   .tl-cell.today { box-shadow: 0 0 0 1.5px var(--blue) inset; }
   .tl-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--sub); margin-top: 3px; }
 
+  .cal-open-btn {
+    margin-top: 8px; width: 100%; padding: 7px; border-radius: 8px; border: 1px solid var(--border);
+    background: white; color: var(--blue-dark); font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+
+  .cal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .cal-nav button { flex: 0 0 auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: #f1f3f4; font-size: 13px; cursor: pointer; }
+  .cal-nav button:disabled { opacity: 0.35; cursor: default; }
+  .cal-nav .cal-month-label { flex: 1; text-align: center; font-weight: 700; font-size: 15px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-weekday { text-align: center; font-size: 11px; color: var(--sub); padding-bottom: 4px; }
+  .cal-cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; font-size: 13px; background: #f1f3f4; color: var(--text);
+  }
+  .cal-cell.other-month { background: transparent; }
+  .cal-cell.booked { background: var(--red); color: white; font-weight: 600; }
+  .cal-cell.today { box-shadow: 0 0 0 2px var(--blue) inset; font-weight: 700; }
+  .cal-legend { display: flex; gap: 14px; font-size: 12px; color: var(--sub); margin-top: 14px; }
+  .cal-legend span { display: flex; align-items: center; gap: 5px; }
+  .cal-legend .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .cal-legend .dot.booked { background: var(--red); }
+  .cal-legend .dot.free { background: #f1f3f4; border: 1px solid var(--border); }
+
   .card.status-inuse { border-left-color: var(--red); }
   .card.status-upcoming { border-left-color: var(--orange); }
   .card.status-free { border-left-color: var(--green); }
@@ -282,6 +306,38 @@
     <div id="project-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     <div class="sheet-actions">
       <button class="btn secondary" id="project-detail-close">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 機材の状況：カテゴリの詳細（グループ見出しをタップすると表示） -->
+<div class="sheet-overlay" id="equipment-detail-overlay">
+  <div class="sheet">
+    <h2 id="equipment-detail-title"></h2>
+    <div class="hint" id="equipment-detail-summary"></div>
+    <div id="equipment-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="equipment-detail-close">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 機材ごとの月間カレンダー -->
+<div class="sheet-overlay" id="calendar-overlay">
+  <div class="sheet">
+    <h2 id="calendar-title"></h2>
+    <div class="cal-nav">
+      <button type="button" id="cal-prev">‹ 前の月</button>
+      <div class="cal-month-label" id="cal-month-label"></div>
+      <button type="button" id="cal-next">次の月 ›</button>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+    <div class="cal-legend">
+      <span><span class="dot booked"></span>予約あり</span>
+      <span><span class="dot free"></span>空き</span>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="calendar-close">閉じる</button>
     </div>
   </div>
 </div>
@@ -531,14 +587,28 @@
     document.getElementById('project-detail-overlay').classList.remove('show');
   }
 
-  // ---------- 機材の状況（全機材を使用中／予約あり／空きで色分け表示） ----------
+  // ---------- 機材の状況（カテゴリごとにグループ表示、タップで使用中／予約あり／空きの詳細） ----------
   function buildEquipmentStatusMap() {
     var today = todayStr();
     var byEquipment = {};
-    equipmentList.forEach(function (name) { byEquipment[name] = { current: [], upcoming: [] }; });
+    var allNames = [];
+
+    function ensure(name) {
+      if (!byEquipment[name]) { byEquipment[name] = { current: [], upcoming: [] }; allNames.push(name); }
+    }
+
+    if (categoryOrder.length > 0) {
+      categoryOrder.forEach(function (cat) {
+        equipmentByCategory[cat].forEach(ensure);
+      });
+    } else {
+      // カテゴリ情報がまだ読み込めていない場合は、これまで通り全機材一覧を使う
+      equipmentList.forEach(ensure);
+    }
+
     bookings.forEach(function (b) {
       if (!b.equipment || !b.startDate || !b.endDate) return;
-      if (!byEquipment[b.equipment]) byEquipment[b.equipment] = { current: [], upcoming: [] };
+      ensure(b.equipment);
       var entry = byEquipment[b.equipment];
       if (b.startDate <= today && today <= b.endDate) {
         entry.current.push(b);
@@ -546,13 +616,24 @@
         entry.upcoming.push(b);
       }
     });
-    return byEquipment;
+
+    return { byEquipment: byEquipment, allNames: allNames };
   }
 
   function statusPriority(entry) {
     if (entry.current.length) return 0;
     if (entry.upcoming.length) return 1;
     return 2;
+  }
+
+  function countByStatus(names, byEquipment) {
+    var counts = { inuse: 0, upcoming: 0, free: 0 };
+    names.forEach(function (name) {
+      var entry = byEquipment[name] || { current: [], upcoming: [] };
+      var p = statusPriority(entry);
+      if (p === 0) counts.inuse++; else if (p === 1) counts.upcoming++; else counts.free++;
+    });
+    return counts;
   }
 
   function renderEquipmentStatus() {
@@ -562,81 +643,192 @@
     var summaryEl = document.getElementById('summary-bar');
     listEl.innerHTML = '';
 
-    var byEquipment = buildEquipmentStatusMap();
-    var allNames = Object.keys(byEquipment);
+    var built = buildEquipmentStatusMap();
+    var byEquipment = built.byEquipment;
+    var allNames = built.allNames;
 
-    var inuseCount = 0, upcomingCount = 0, freeCount = 0;
-    allNames.forEach(function (name) {
-      var p = statusPriority(byEquipment[name]);
-      if (p === 0) inuseCount++; else if (p === 1) upcomingCount++; else freeCount++;
-    });
+    var totals = countByStatus(allNames, byEquipment);
     summaryEl.innerHTML =
       '全' + allNames.length + '件　' +
-      '<span>🔴 使用中: <b>' + inuseCount + '</b></span>' +
-      '<span>🟡 予約あり: <b>' + upcomingCount + '</b></span>' +
-      '<span>🟢 空き: <b>' + freeCount + '</b></span>';
+      '<span>🔴 使用中: <b>' + totals.inuse + '</b></span>' +
+      '<span>🟡 予約あり: <b>' + totals.upcoming + '</b></span>' +
+      '<span>🟢 空き: <b>' + totals.free + '</b></span>';
     summaryEl.style.display = 'flex';
 
-    var names = keyword
-      ? allNames.filter(function (name) { return name.toLowerCase().indexOf(keyword) !== -1; })
-      : allNames.slice();
+    // カテゴリごとにグループ化（カテゴリ情報が未取得ならまとめて1グループ）
+    var groupOrder, namesByGroup = {};
+    if (categoryOrder.length > 0) {
+      groupOrder = categoryOrder.slice();
+      groupOrder.forEach(function (cat) { namesByGroup[cat] = equipmentByCategory[cat].slice(); });
+    } else {
+      groupOrder = ['全機材'];
+      namesByGroup['全機材'] = allNames.slice();
+    }
 
-    names.sort(function (a, b) {
-      var pa = statusPriority(byEquipment[a]), pb = statusPriority(byEquipment[b]);
-      if (pa !== pb) return pa - pb;
-      return a.localeCompare(b, 'ja');
+    // キーワードで各グループ内を絞り込み、0件になったグループは非表示
+    var visibleGroups = groupOrder.filter(function (cat) {
+      var names = namesByGroup[cat];
+      if (keyword) {
+        names = names.filter(function (n) { return n.toLowerCase().indexOf(keyword) !== -1; });
+        namesByGroup[cat] = names;
+      }
+      return names.length > 0;
     });
 
-    if (names.length === 0) {
+    if (visibleGroups.length === 0) {
       emptyEl.textContent = '該当する機材がありません';
       emptyEl.style.display = 'block';
       return;
     }
     emptyEl.style.display = 'none';
 
-    var timelineDates = buildTimelineDates();
-
-    names.forEach(function (name) {
-      var entry = byEquipment[name];
-      entry.upcoming.sort(function (a, b) {
-        return a.startDate < b.startDate ? -1 : (a.startDate > b.startDate ? 1 : 0);
-      });
-
-      var statusClass = entry.current.length ? 'inuse' : (entry.upcoming.length ? 'upcoming' : 'free');
-      var card = document.createElement('div');
-      card.className = 'card status-' + statusClass;
-
-      var badgeHtml, detailHtml;
-      if (entry.current.length) {
-        badgeHtml = '<span class="status-badge inuse">使用中</span>';
-        detailHtml = entry.current.map(function (b) {
-          return escapeHtml(b.project || '（作品名未入力）') + '　〜' + escapeHtml(b.endDate) + 'まで';
-        }).join('<br>');
-      } else if (entry.upcoming.length) {
-        var next = entry.upcoming[0];
-        badgeHtml = '<span class="status-badge upcoming">予約あり</span>';
-        detailHtml = escapeHtml(next.startDate) + '〜' + escapeHtml(next.endDate) + '　' +
-          escapeHtml(next.project || '（作品名未入力）') +
-          (entry.upcoming.length > 1 ? '　他' + (entry.upcoming.length - 1) + '件' : '');
-      } else {
-        badgeHtml = '<span class="status-badge free">空き</span>';
-        detailHtml = '直近の予定はありません';
-      }
-
-      card.innerHTML =
-        '<div class="row1">' +
-          '<div class="equipment">' + escapeHtml(name) + '</div>' +
-          badgeHtml +
-        '</div>' +
-        '<div class="period">' + detailHtml + '</div>' +
-        buildMiniTimelineHtml(entry, timelineDates);
-
-      card.addEventListener('click', function () {
-        document.getElementById('search-input').value = name;
-        switchView('bookings');
-      });
-      listEl.appendChild(card);
+    visibleGroups.forEach(function (cat) {
+      var names = namesByGroup[cat];
+      var counts = countByStatus(names, byEquipment);
+      var header = document.createElement('div');
+      header.className = 'group-header';
+      header.innerHTML =
+        '<span>' + escapeHtml(cat) + '（' + names.length + '件）　🔴' + counts.inuse +
+          ' 🟡' + counts.upcoming + ' 🟢' + counts.free + '</span>' +
+        '<span class="chevron">詳細 ›</span>';
+      header.addEventListener('click', function () { openEquipmentCategoryDetail(cat, names, byEquipment); });
+      listEl.appendChild(header);
     });
+  }
+
+  function buildEquipmentStatusCard(name, entry, timelineDates) {
+    entry.upcoming.sort(function (a, b) {
+      return a.startDate < b.startDate ? -1 : (a.startDate > b.startDate ? 1 : 0);
+    });
+
+    var statusClass = entry.current.length ? 'inuse' : (entry.upcoming.length ? 'upcoming' : 'free');
+    var card = document.createElement('div');
+    card.className = 'card status-' + statusClass;
+
+    var badgeHtml, detailHtml;
+    if (entry.current.length) {
+      badgeHtml = '<span class="status-badge inuse">使用中</span>';
+      detailHtml = entry.current.map(function (b) {
+        return escapeHtml(b.project || '（作品名未入力）') + '　〜' + escapeHtml(b.endDate) + 'まで';
+      }).join('<br>');
+    } else if (entry.upcoming.length) {
+      var next = entry.upcoming[0];
+      badgeHtml = '<span class="status-badge upcoming">予約あり</span>';
+      detailHtml = escapeHtml(next.startDate) + '〜' + escapeHtml(next.endDate) + '　' +
+        escapeHtml(next.project || '（作品名未入力）') +
+        (entry.upcoming.length > 1 ? '　他' + (entry.upcoming.length - 1) + '件' : '');
+    } else {
+      badgeHtml = '<span class="status-badge free">空き</span>';
+      detailHtml = '直近の予定はありません';
+    }
+
+    card.innerHTML =
+      '<div class="row1">' +
+        '<div class="equipment">' + escapeHtml(name) + '</div>' +
+        badgeHtml +
+      '</div>' +
+      '<div class="period">' + detailHtml + '</div>' +
+      buildMiniTimelineHtml(entry, timelineDates) +
+      '<button type="button" class="cal-open-btn">📅 カレンダーで全期間を確認</button>';
+
+    card.querySelector('.cal-open-btn').addEventListener('click', function (e) {
+      e.stopPropagation();
+      openEquipmentCalendar(name);
+    });
+
+    card.addEventListener('click', function () {
+      closeEquipmentCategoryDetail();
+      document.getElementById('search-input').value = name;
+      switchView('bookings');
+    });
+    return card;
+  }
+
+  // ---------- 機材ごとの月間カレンダー（今月以降を自由に閲覧できる） ----------
+  var calendarEquipmentName = null;
+  var calendarYear, calendarMonth; // calendarMonthは0始まり
+
+  function getBookingsForEquipment(name) {
+    return bookings.filter(function (b) { return b.equipment === name && b.startDate && b.endDate; });
+  }
+
+  function openEquipmentCalendar(name) {
+    calendarEquipmentName = name;
+    var now = new Date();
+    calendarYear = now.getFullYear();
+    calendarMonth = now.getMonth();
+    renderCalendar();
+    document.getElementById('calendar-overlay').classList.add('show');
+  }
+  function closeEquipmentCalendar() {
+    document.getElementById('calendar-overlay').classList.remove('show');
+  }
+
+  function renderCalendar() {
+    document.getElementById('calendar-title').textContent = calendarEquipmentName;
+    document.getElementById('cal-month-label').textContent = calendarYear + '年' + (calendarMonth + 1) + '月';
+
+    var now = new Date();
+    var isCurrentMonth = (calendarYear === now.getFullYear() && calendarMonth === now.getMonth());
+    document.getElementById('cal-prev').disabled = isCurrentMonth; // 通信量の都合上、今月より前へは戻れない
+
+    var itemBookings = getBookingsForEquipment(calendarEquipmentName);
+    var todayStrVal = todayStr();
+
+    var firstOfMonth = new Date(calendarYear, calendarMonth, 1);
+    var startWeekday = firstOfMonth.getDay();
+    var daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+
+    var gridEl = document.getElementById('cal-grid');
+    gridEl.innerHTML = '';
+    ['日', '月', '火', '水', '木', '金', '土'].forEach(function (w) {
+      var el = document.createElement('div');
+      el.className = 'cal-weekday';
+      el.textContent = w;
+      gridEl.appendChild(el);
+    });
+    for (var i = 0; i < startWeekday; i++) {
+      var pad = document.createElement('div');
+      pad.className = 'cal-cell other-month';
+      gridEl.appendChild(pad);
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+      var dStr = formatDateStr(new Date(calendarYear, calendarMonth, day));
+      var booked = itemBookings.some(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
+      var cell = document.createElement('div');
+      cell.className = 'cal-cell' + (booked ? ' booked' : '') + (dStr === todayStrVal ? ' today' : '');
+      cell.textContent = String(day);
+      gridEl.appendChild(cell);
+    }
+  }
+
+  // ---------- 機材の状況：カテゴリの詳細シート ----------
+  function openEquipmentCategoryDetail(categoryName, names, byEquipment) {
+    document.getElementById('equipment-detail-title').textContent = categoryName;
+
+    var sortedNames = names.slice().sort(function (a, b) {
+      var pa = statusPriority(byEquipment[a] || { current: [], upcoming: [] });
+      var pb = statusPriority(byEquipment[b] || { current: [], upcoming: [] });
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b, 'ja');
+    });
+
+    var counts = countByStatus(sortedNames, byEquipment);
+    document.getElementById('equipment-detail-summary').textContent =
+      sortedNames.length + '件の機材　🔴使用中' + counts.inuse + '　🟡予約あり' + counts.upcoming + '　🟢空き' + counts.free;
+
+    var listEl = document.getElementById('equipment-detail-list');
+    listEl.innerHTML = '';
+    var timelineDates = buildTimelineDates();
+    sortedNames.forEach(function (name) {
+      var entry = byEquipment[name] || { current: [], upcoming: [] };
+      listEl.appendChild(buildEquipmentStatusCard(name, entry, timelineDates));
+    });
+
+    document.getElementById('equipment-detail-overlay').classList.add('show');
+  }
+  function closeEquipmentCategoryDetail() {
+    document.getElementById('equipment-detail-overlay').classList.remove('show');
   }
 
   function escapeHtml(s) {
@@ -908,6 +1100,19 @@
   document.getElementById('form-cancel').addEventListener('click', closeForm);
   document.getElementById('form-save').addEventListener('click', submitForm);
   document.getElementById('project-detail-close').addEventListener('click', closeProjectDetail);
+  document.getElementById('equipment-detail-close').addEventListener('click', closeEquipmentCategoryDetail);
+  document.getElementById('calendar-close').addEventListener('click', closeEquipmentCalendar);
+  document.getElementById('cal-prev').addEventListener('click', function () {
+    if (this.disabled) return;
+    calendarMonth--;
+    if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
+    renderCalendar();
+  });
+  document.getElementById('cal-next').addEventListener('click', function () {
+    calendarMonth++;
+    if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+    renderCalendar();
+  });
   document.getElementById('f-category').addEventListener('change', function () {
     updateEquipmentDatalist(this.value);
     document.getElementById('f-equipment').value = '';
