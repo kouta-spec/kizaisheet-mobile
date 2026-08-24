@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>機材シート2026 モバイル</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="theme-color" content="#1a73e8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  :root {
+    --blue: #1a73e8;
+    --blue-dark: #0f5bc4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #202124;
+    --sub: #5f6368;
+    --border: #e0e0e0;
+    --red: #d93025;
+    --orange: #f9ab00;
+    --green: #1e8e3e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--blue); color: white;
+    padding: calc(env(safe-area-inset-top) + 14px) 16px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header button.icon-btn {
+    background: none; border: none; color: white; font-size: 20px;
+    padding: 6px 8px; cursor: pointer;
+  }
+  .tabs { display: flex; gap: 8px; padding: 10px 14px 0; }
+  .tab-btn {
+    flex: 1; padding: 9px 0; border-radius: 8px; border: 1px solid var(--border);
+    background: white; font-size: 13px; font-weight: 600; color: var(--sub); cursor: pointer;
+  }
+  .tab-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+
+  .search-bar { padding: 10px 14px; background: var(--bg); }
+  .search-bar input {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    font-size: 15px; background: white;
+  }
+  .gantt-actions { display: flex; gap: 8px; padding: 0 14px 10px; }
+  .gantt-actions button {
+    flex: 1; padding: 9px 0; border-radius: 8px; border: 1px solid var(--border);
+    background: white; color: var(--blue-dark); font-size: 12.5px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .gantt-actions button:disabled { opacity: 0.5; }
+  #status-banner {
+    display: none; margin: 0 14px 10px; padding: 10px 12px; border-radius: 8px;
+    font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+  }
+  #status-banner.show { display: block; }
+  #status-banner.info { background: #e8f0fe; color: var(--blue-dark); }
+  #status-banner.error { background: #fce8e6; color: var(--red); }
+  #status-banner.warn { background: #fef7e0; color: #a35a00; }
+
+  #list { padding: 0 14px; display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    background: var(--card); border-radius: 12px; padding: 12px 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    border-left: 5px solid var(--blue);
+  }
+  .card.supplier { border-left-color: var(--orange); }
+  .card .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card .equipment { font-weight: 600; font-size: 15px; }
+  .card .price { font-size: 13px; color: var(--sub); white-space: nowrap; }
+  .card .project { font-size: 13px; color: var(--blue-dark); margin-top: 2px; }
+  .card .period { font-size: 13px; color: var(--sub); margin-top: 4px; }
+  .card .badges { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #eee; color: var(--sub);
+  }
+  .badge.supplier { background: #fef0d8; color: #a35a00; }
+  .badge.returned { background: #e6f4ea; color: var(--green); }
+
+  .group-header {
+    font-size: 13px; font-weight: 700; color: var(--blue-dark);
+    margin: 10px 2px -2px; padding: 8px 10px; cursor: pointer;
+    background: #e8f0fe; border-radius: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .group-header:first-child { margin-top: 0; }
+  .group-header .chevron { color: var(--blue-dark); font-size: 14px; }
+
+  .mini-cal { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .mini-cal-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .mini-cal-nav button {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+    background: #f1f3f4; font-size: 13px; cursor: pointer; line-height: 1;
+  }
+  .mini-cal-nav button:disabled { opacity: 0.3; cursor: default; }
+  .mc-label { flex: 1; text-align: center; font-size: 12px; font-weight: 700; color: var(--sub); }
+  .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .mc-weekday { text-align: center; font-size: 9px; color: var(--sub); padding-bottom: 2px; }
+  .mc-cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    border-radius: 5px; font-size: 10px; background: #f1f3f4; color: var(--text); cursor: pointer;
+  }
+  .mc-cell.mc-other { background: transparent; }
+  .mc-cell.mc-booked { background: var(--red); color: white; font-weight: 600; }
+  .mc-cell.mc-today { box-shadow: 0 0 0 1.5px var(--blue) inset; font-weight: 700; }
+
+  .card.status-inuse { border-left-color: var(--red); }
+  .card.status-upcoming { border-left-color: var(--orange); }
+  .card.status-free { border-left-color: var(--green); }
+  .status-badge {
+    font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; white-space: nowrap;
+  }
+  .status-badge.inuse { background: #fce8e6; color: var(--red); }
+  .status-badge.upcoming { background: #fef7e0; color: #a35a00; }
+  .status-badge.free { background: #e6f4ea; color: var(--green); }
+
+  .summary-bar {
+    font-size: 12px; color: var(--sub); padding: 0 2px 10px; display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  .summary-bar b { color: var(--text); }
+
+  #equipment-detail-sticky {
+    position: sticky; top: -18px; z-index: 5; background: white;
+    margin: -18px -18px 0; padding: 18px 18px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  #equipment-detail-sticky .sheet-header { margin-bottom: 0; }
+  .jump-row {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 12px;
+  }
+  .jump-chip {
+    flex: 0 0 auto; padding: 6px 11px; border-radius: 14px; border: 1px solid var(--border);
+    background: #f1f3f4; color: var(--text); font-size: 11px; white-space: nowrap; cursor: pointer;
+  }
+  .jump-chip.inuse { background: #fce8e6; color: var(--red); border-color: transparent; }
+  .jump-chip.upcoming { background: #fef7e0; color: #a35a00; border-color: transparent; }
+  .jump-chip.free { background: #e6f4ea; color: var(--green); border-color: transparent; }
+
+  .card.flash { box-shadow: 0 0 0 3px var(--blue); transition: box-shadow 0.2s ease-out; }
+
+  #empty { text-align: center; color: var(--sub); padding: 60px 20px; font-size: 14px; }
+
+  .fab {
+    position: fixed; right: 20px; bottom: calc(env(safe-area-inset-bottom) + 20px);
+    width: 56px; height: 56px; border-radius: 50%; background: var(--blue); color: white;
+    border: none; font-size: 28px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); cursor: pointer;
+    z-index: 20;
+  }
+
+  .sheet-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 30;
+  }
+  .sheet-overlay.show { display: block; }
+  .sheet {
+    position: fixed; top: 50%; left: 50%; width: calc(100% - 32px); max-width: 520px;
+    background: white; border-radius: 16px; padding: 18px;
+    max-height: 85vh; overflow-y: auto; z-index: 31;
+    transform: translate(-50%, -50%) scale(0.95); opacity: 0;
+    transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+  }
+  .sheet-overlay.show .sheet { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  .sheet h2 { margin: 0 0 14px; font-size: 17px; }
+  .sheet-header { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  .sheet-header h2 { margin: 0; flex: 1; }
+  .sheet-back-btn {
+    background: #eef2fc; border: none; color: var(--blue-dark); font-size: 14px; font-weight: 700;
+    line-height: 1; padding: 9px 14px; border-radius: 20px; cursor: pointer; flex: 0 0 auto;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+    font-size: 15px; background: white;
+  }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1; }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .btn {
+    flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn.primary { background: var(--blue); color: white; }
+  .btn.secondary { background: #f1f3f4; color: var(--text); }
+  .btn:disabled { opacity: 0.5; }
+  .form-error { color: var(--red); font-size: 13px; margin-top: -6px; margin-bottom: 10px; display: none; }
+  .form-error.show { display: block; }
+  .btn-delete {
+    width: 100%; margin-top: 10px; padding: 11px; border-radius: 10px; border: 1px solid var(--red);
+    background: white; color: var(--red); font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+
+  .settings-field { margin-bottom: 14px; }
+  .settings-field label { display: block; font-size: 13px; color: var(--sub); margin-bottom: 4px; }
+  .settings-field input {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px;
+  }
+  .hint { font-size: 12px; color: var(--sub); line-height: 1.6; margin-bottom: 16px; }
+
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #loading-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.7); z-index: 50;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+  }
+  #loading-overlay.show { display: flex; }
+  #loading-overlay .big-spinner {
+    width: 32px; height: 32px; border: 3px solid #ddd; border-top-color: var(--blue);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  #loading-overlay .loading-text { font-size: 13px; color: var(--sub); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>機材シート2026</h1>
+    <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
+  </header>
+
+  <div class="tabs" id="view-tabs">
+    <button class="tab-btn active" data-view="bookings">予約一覧</button>
+    <button class="tab-btn" data-view="equipment">機材の状況</button>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" id="search-input" placeholder="機材名・作品名で検索">
+  </div>
+
+  <div class="gantt-actions">
+    <button type="button" id="gantt-view-btn">📊 ガントチャート表示</button>
+    <button type="button" id="gantt-refresh-btn">🔄 ガントチャートを更新</button>
+  </div>
+
+  <div id="status-banner"></div>
+  <div class="summary-bar" id="summary-bar" style="display:none;"></div>
+  <div id="list"></div>
+  <div id="empty" style="display:none;">予約データがありません</div>
+
+  <button class="fab" id="add-fab" title="新しい予約を追加">＋</button>
+</div>
+
+<!-- 設定画面 -->
+<div class="sheet-overlay" id="settings-overlay">
+  <div class="sheet">
+    <div class="sheet-header">
+      <button type="button" class="sheet-back-btn" id="settings-back">← 戻る</button>
+      <h2>接続設定</h2>
+    </div>
+    <div class="hint">
+      Apps Scriptで発行した「ウェブアプリのURL」と、MOBILE_API_TOKENに設定した合言葉を入力してください。この情報はこのスマホの中だけに保存され、外部には送信されません。
+    </div>
+    <div class="settings-field">
+      <label>ウェブアプリのURL（.../exec）</label>
+      <input type="text" id="settings-url" placeholder="https://script.google.com/macros/s/.../exec">
+    </div>
+    <div class="settings-field">
+      <label>合言葉（トークン）</label>
+      <input type="text" id="settings-token" placeholder="MOBILE_API_TOKENに設定した文字列">
+    </div>
+    <div class="form-error" id="settings-error"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="settings-cancel">閉じる</button>
+      <button class="btn primary" id="settings-save">保存して接続</button>
+    </div>
+  </div>
+</div>
+
+<!-- 追加・編集フォーム -->
+<div class="sheet-overlay" id="form-overlay">
+  <div class="sheet">
+    <div class="sheet-header">
+      <button type="button" class="sheet-back-btn" id="form-back">← 戻る</button>
+      <h2 id="form-title">予約を追加</h2>
+    </div>
+    <div class="field">
+      <label>作品名</label>
+      <input type="text" id="f-project">
+    </div>
+    <div class="field">
+      <label>カテゴリで絞り込む（任意）</label>
+      <select id="f-category"><option value="">すべて表示</option></select>
+    </div>
+    <div class="field">
+      <label>機材名（マスターガントチャートの一覧から選択）</label>
+      <input type="text" id="f-equipment" list="equipment-list" autocomplete="off">
+      <datalist id="equipment-list"></datalist>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>数量</label>
+        <input type="number" id="f-quantity" min="1" placeholder="1">
+      </div>
+      <div class="field">
+        <label>発注先</label>
+        <input type="text" id="f-supplier" placeholder="セット機材以外の追加時のみ">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>開始日</label>
+        <input type="date" id="f-start">
+      </div>
+      <div class="field">
+        <label>終了日</label>
+        <input type="date" id="f-end">
+      </div>
+    </div>
+    <div class="field">
+      <label>備考</label>
+      <input type="text" id="f-note">
+    </div>
+    <div class="form-error" id="form-error"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="form-cancel">キャンセル</button>
+      <button class="btn primary" id="form-save">保存する</button>
+    </div>
+    <button type="button" class="btn-delete" id="form-delete" style="display:none;">この予約を削除する</button>
+  </div>
+</div>
+
+<!-- 作品の詳細（グループ見出しをタップすると表示） -->
+<div class="sheet-overlay" id="project-detail-overlay">
+  <div class="sheet">
+    <div class="sheet-header">
+      <button type="button" class="sheet-back-btn" id="project-detail-back">← 戻る</button>
+      <h2 id="project-detail-title"></h2>
+    </div>
+    <div class="hint" id="project-detail-summary"></div>
+    <div id="project-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="project-detail-close">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 機材の状況：カテゴリの詳細（グループ見出しをタップすると表示） -->
+<div class="sheet-overlay" id="equipment-detail-overlay">
+  <div class="sheet" id="equipment-detail-scroll">
+    <div id="equipment-detail-sticky">
+      <div class="sheet-header">
+        <button type="button" class="sheet-back-btn" id="equipment-detail-back">← 戻る</button>
+        <h2 id="equipment-detail-title"></h2>
+      </div>
+    </div>
+    <div class="hint" id="equipment-detail-summary"></div>
+    <div class="jump-row" id="equipment-detail-jump"></div>
+    <div id="equipment-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="equipment-detail-close">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay">
+  <div class="big-spinner"></div>
+  <div class="loading-text" id="loading-text">更新中...</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'kizai_mobile_settings_v1';
+  var settings = { url: '', token: '' };
+  var bookings = [];
+  var equipmentList = [];
+  var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
+  var categoryOrder = [];
+  var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
+  var currentView = 'bookings'; // 'bookings' または 'equipment'
+
+  // ---------- 設定の読み書き ----------
+  function loadSettings() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) settings = JSON.parse(raw);
+    } catch (e) { /* 読み込めなければ初期値のまま */ }
+  }
+  function saveSettings() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) { /* 保存できなくても致命的ではない */ }
+  }
+  function hasSettings() {
+    return !!(settings.url && settings.token);
+  }
+
+  // ---------- API呼び出し ----------
+  function apiGet(action, extraParams) {
+    var url = settings.url + '?action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(settings.token);
+    if (extraParams) {
+      Object.keys(extraParams).forEach(function (k) {
+        url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(extraParams[k]);
+      });
+    }
+    return fetch(url).then(function (res) { return res.json(); });
+  }
+
+  function apiPost(body) {
+    body.token = settings.token;
+    // 【重要】Content-Typeをtext/plainにすることで、ブラウザのCORSプリフライトを回避する
+    // （Apps ScriptのWeb Appはプリフライト(OPTIONS)に対応していないため）
+    return fetch(settings.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    }).then(function (res) { return res.json(); });
+  }
+
+  // ---------- 画面表示ヘルパー ----------
+  function showBanner(message, type) {
+    var el = document.getElementById('status-banner');
+    el.textContent = message;
+    el.className = 'show ' + (type || 'info');
+  }
+  function hideBanner() {
+    document.getElementById('status-banner').className = '';
+  }
+  function showLoading(text) {
+    document.getElementById('loading-text').textContent = text || '更新中...';
+    document.getElementById('loading-overlay').classList.add('show');
+  }
+  function hideLoading() {
+    document.getElementById('loading-overlay').classList.remove('show');
+  }
+
+  // ---------- タブ切り替え ----------
+  function switchView(view) {
+    currentView = view;
+    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    document.getElementById('search-input').placeholder =
+      view === 'bookings' ? '機材名・作品名で検索' : '機材名で検索';
+    renderCurrentView();
+  }
+
+  function renderCurrentView() {
+    if (currentView === 'equipment') {
+      renderEquipmentStatus();
+    } else {
+      renderBookingsGrouped();
+    }
+  }
+
+  function todayStr() {
+    return formatDateStr(new Date());
+  }
+
+  function formatDateStr(d) {
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '/' + m + '/' + day;
+  }
+
+  // ---------- 予約一覧（作品ごとにグループ表示） ----------
+  function renderBookingsGrouped() {
+    document.getElementById('summary-bar').style.display = 'none';
+    var keyword = document.getElementById('search-input').value.trim().toLowerCase();
+    var listEl = document.getElementById('list');
+    var emptyEl = document.getElementById('empty');
+    listEl.innerHTML = '';
+
+    var filtered = bookings.filter(function (b) {
+      if (!keyword) return true;
+      return (b.equipment + ' ' + b.project).toLowerCase().indexOf(keyword) !== -1;
+    });
+
+    if (filtered.length === 0) {
+      emptyEl.textContent = '予約データがありません';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    // 作品名ごとにグループ化
+    var groups = {};
+    var groupOrder = [];
+    filtered.forEach(function (b) {
+      var key = b.project || '（作品名未入力）';
+      if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+      groups[key].push(b);
+    });
+
+    // 【2026/8/24変更】グループ内（同じ作品名の機材の並び順）は変更せず、機材リストシートでの
+    // 行の並び順のまま表示する（あえてソートしない＝APIから届いた順＝シートの行順）。
+    // グループ（作品名の見出し）自体の並び順は、「そのグループの中で一番遅い（先の）開始日」を
+    // 基準に、新しい順（開始日が遅いもの＝未来の予定が上）にする。
+    function groupMaxStartDate(key) {
+      var max = '';
+      groups[key].forEach(function (b) {
+        if (b.startDate && b.startDate > max) max = b.startDate;
+      });
+      return max;
+    }
+    groupOrder.sort(function (ka, kb) {
+      var a = groupMaxStartDate(ka), b = groupMaxStartDate(kb);
+      if (!a) return 1;
+      if (!b) return -1;
+      return a < b ? 1 : (a > b ? -1 : 0); // 降順（開始日が遅いグループほど上）
+    });
+
+    groupOrder.forEach(function (key) {
+      // 期間表示は、そのグループの先頭（一番上）にある予約の開始日・終了日を使う
+      var head = groups[key][0];
+      var periodText = (head.startDate && head.endDate) ? '　' + head.startDate + '〜' + head.endDate : '';
+      var header = document.createElement('div');
+      header.className = 'group-header';
+      header.innerHTML =
+        '<span>' + escapeHtml(key) + '（' + groups[key].length + '件）' + escapeHtml(periodText) + '</span>' +
+        '<span class="chevron">詳細 ›</span>';
+      header.addEventListener('click', function () { openProjectDetail(key, groups[key]); });
+      listEl.appendChild(header);
+    });
+  }
+
+  function buildBookingCard(b, onClick) {
+    var card = document.createElement('div');
+    card.className = 'card' + (b.supplier ? ' supplier' : '');
+
+    var priceText = '';
+    if (b.price !== '' && b.price !== null && b.price !== undefined) {
+      priceText = String(b.price);
+    }
+
+    var badgesHtml = '';
+    if (b.supplier) badgesHtml += '<span class="badge supplier">発注先: ' + escapeHtml(b.supplier) + '</span>';
+    if (b.returnCheck === '返却済み') badgesHtml += '<span class="badge returned">返却済み</span>';
+
+    card.innerHTML =
+      '<div class="row1">' +
+        '<div class="equipment">' + escapeHtml(b.equipment) + '</div>' +
+        '<div class="price">' + escapeHtml(priceText) + '</div>' +
+      '</div>' +
+      '<div class="period">' + escapeHtml(b.startDate || '?') + ' 〜 ' + escapeHtml(b.endDate || '?') +
+        (b.quantity ? '　数量: ' + escapeHtml(String(b.quantity)) : '') + '</div>' +
+      (badgesHtml ? '<div class="badges">' + badgesHtml + '</div>' : '');
+
+    card.addEventListener('click', function () { (onClick || openEditForm)(b); });
+    return card;
+  }
+
+  // ---------- 作品の詳細シート ----------
+  function openProjectDetail(projectName, items) {
+    document.getElementById('project-detail-title').textContent = projectName;
+
+    var totalPrice = 0, hasPrice = false;
+    var minStart = null, maxEnd = null;
+    items.forEach(function (b) {
+      var n = Number(b.price);
+      if (b.price !== '' && b.price !== null && b.price !== undefined && !isNaN(n)) {
+        totalPrice += n;
+        hasPrice = true;
+      }
+      if (b.startDate && (!minStart || b.startDate < minStart)) minStart = b.startDate;
+      if (b.endDate && (!maxEnd || b.endDate > maxEnd)) maxEnd = b.endDate;
+    });
+    var summary = items.length + '件の機材';
+    if (minStart && maxEnd) summary += '　期間: ' + minStart + '〜' + maxEnd;
+    if (hasPrice) summary += '　合計金額: ' + totalPrice.toLocaleString() + '円';
+    document.getElementById('project-detail-summary').textContent = summary;
+
+    var listEl = document.getElementById('project-detail-list');
+    listEl.innerHTML = '';
+    items.forEach(function (b) {
+      listEl.appendChild(buildBookingCard(b, function (bk) {
+        closeProjectDetail();
+        openEditForm(bk);
+      }));
+    });
+
+    document.getElementById('project-detail-overlay').classList.add('show');
+  }
+  function closeProjectDetail() {
+    document.getElementById('project-detail-overlay').classList.remove('show');
+  }
+
+  // ---------- 機材の状況（カテゴリごとにグループ表示、タップで使用中／予約あり／空きの詳細） ----------
+  function buildEquipmentStatusMap() {
+    var today = todayStr();
+    var byEquipment = {};
+    var allNames = [];
+
+    function ensure(name) {
+      if (!byEquipment[name]) { byEquipment[name] = { current: [], upcoming: [] }; allNames.push(name); }
+    }
+
+    if (categoryOrder.length > 0) {
+      categoryOrder.forEach(function (cat) {
+        equipmentByCategory[cat].forEach(ensure);
+      });
+    } else {
+      // カテゴリ情報がまだ読み込めていない場合は、これまで通り全機材一覧を使う
+      equipmentList.forEach(ensure);
+    }
+
+    bookings.forEach(function (b) {
+      if (!b.equipment || !b.startDate || !b.endDate) return;
+      ensure(b.equipment);
+      var entry = byEquipment[b.equipment];
+      if (b.startDate <= today && today <= b.endDate) {
+        entry.current.push(b);
+      } else if (b.startDate > today) {
+        entry.upcoming.push(b);
+      }
+    });
+
+    return { byEquipment: byEquipment, allNames: allNames };
+  }
+
+  function statusPriority(entry) {
+    if (entry.current.length) return 0;
+    if (entry.upcoming.length) return 1;
+    return 2;
+  }
+
+  function countByStatus(names, byEquipment) {
+    var counts = { inuse: 0, upcoming: 0, free: 0 };
+    names.forEach(function (name) {
+      var entry = byEquipment[name] || { current: [], upcoming: [] };
+      var p = statusPriority(entry);
+      if (p === 0) counts.inuse++; else if (p === 1) counts.upcoming++; else counts.free++;
+    });
+    return counts;
+  }
+
+  function renderEquipmentStatus() {
+    var keyword = document.getElementById('search-input').value.trim().toLowerCase();
+    var listEl = document.getElementById('list');
+    var emptyEl = document.getElementById('empty');
+    var summaryEl = document.getElementById('summary-bar');
+    listEl.innerHTML = '';
+
+    var built = buildEquipmentStatusMap();
+    var byEquipment = built.byEquipment;
+    var allNames = built.allNames;
+
+    summaryEl.innerHTML = '全' + allNames.length + '件';
+    summaryEl.style.display = 'flex';
+
+    // カテゴリごとにグループ化（カテゴリ情報が未取得ならまとめて1グループ）
+    var groupOrder, namesByGroup = {};
+    if (categoryOrder.length > 0) {
+      groupOrder = categoryOrder.slice();
+      groupOrder.forEach(function (cat) { namesByGroup[cat] = equipmentByCategory[cat].slice(); });
+    } else {
+      groupOrder = ['全機材'];
+      namesByGroup['全機材'] = allNames.slice();
+    }
+
+    // キーワードで各グループ内を絞り込み、0件になったグループは非表示
+    var visibleGroups = groupOrder.filter(function (cat) {
+      var names = namesByGroup[cat];
+      if (keyword) {
+        names = names.filter(function (n) { return n.toLowerCase().indexOf(keyword) !== -1; });
+        namesByGroup[cat] = names;
+      }
+      return names.length > 0;
+    });
+
+    if (visibleGroups.length === 0) {
+      emptyEl.textContent = '該当する機材がありません';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    visibleGroups.forEach(function (cat) {
+      var names = namesByGroup[cat];
+      var header = document.createElement('div');
+      header.className = 'group-header';
+      header.innerHTML =
+        '<span>' + escapeHtml(cat) + '（' + names.length + '件）</span>' +
+        '<span class="chevron">詳細 ›</span>';
+      header.addEventListener('click', function () { openEquipmentCategoryDetail(cat, names, byEquipment); });
+      listEl.appendChild(header);
+    });
+  }
+
+  function buildEquipmentStatusCard(name, entry) {
+    entry.upcoming.sort(function (a, b) {
+      return a.startDate < b.startDate ? -1 : (a.startDate > b.startDate ? 1 : 0);
+    });
+
+    var statusClass = entry.current.length ? 'inuse' : (entry.upcoming.length ? 'upcoming' : 'free');
+    var card = document.createElement('div');
+    card.className = 'card status-' + statusClass;
+
+    var badgeHtml, detailHtml;
+    if (entry.current.length) {
+      badgeHtml = '<span class="status-badge inuse">使用中</span>';
+      detailHtml = entry.current.map(function (b) {
+        return escapeHtml(b.project || '（作品名未入力）') + '　〜' + escapeHtml(b.endDate) + 'まで';
+      }).join('<br>');
+    } else if (entry.upcoming.length) {
+      var next = entry.upcoming[0];
+      badgeHtml = '<span class="status-badge upcoming">予約あり</span>';
+      detailHtml = escapeHtml(next.startDate) + '〜' + escapeHtml(next.endDate) + '　' +
+        escapeHtml(next.project || '（作品名未入力）') +
+        (entry.upcoming.length > 1 ? '　他' + (entry.upcoming.length - 1) + '件' : '');
+    } else {
+      badgeHtml = '<span class="status-badge free">空き</span>';
+      detailHtml = '直近の予定はありません';
+    }
+
+    card.innerHTML =
+      '<div class="row1">' +
+        '<div class="equipment">' + escapeHtml(name) + '</div>' +
+        badgeHtml +
+      '</div>' +
+      '<div class="period">' + detailHtml + '</div>' +
+      '<div class="mini-cal">' +
+        '<div class="mini-cal-nav">' +
+          '<button type="button" class="mc-prev">‹</button>' +
+          '<span class="mc-label"></span>' +
+          '<button type="button" class="mc-next">›</button>' +
+        '</div>' +
+        '<div class="mini-cal-grid"></div>' +
+      '</div>';
+
+    attachInlineCalendar(card, entry, name);
+
+    // 【2026/8/24再修正】「カード全体をタップすると予約一覧タブへ移動する」という動きは、
+    // カレンダーが大きくなってからは、カレンダーの余白や日付以外の場所をタップした
+    // だけでも意図せず画面が切り替わってしまい、分かりにくいという指摘が続いたため撤去した。
+    // 今はカード自体をタップしても何も起きない（カレンダーの日付タップ・矢印タップだけが
+    // それぞれの動きをする）。
+    return card;
+  }
+
+  // カードの中に、その機材専用の月間カレンダーを組み込む（今月以降を自由に閲覧できる。
+  // 通信量の都合上、今月より前へは戻れない）。日付をタップすると、その機材・その日を
+  // 開始日にした予約追加フォームがすぐ開く。
+  function attachInlineCalendar(card, entry, name) {
+    var itemBookings = entry.current.concat(entry.upcoming);
+    var now = new Date();
+    var year = now.getFullYear();
+    var month = now.getMonth();
+
+    var labelEl = card.querySelector('.mc-label');
+    var gridEl = card.querySelector('.mini-cal-grid');
+    var prevBtn = card.querySelector('.mc-prev');
+    var nextBtn = card.querySelector('.mc-next');
+
+    function renderMonth() {
+      labelEl.textContent = year + '年' + (month + 1) + '月';
+      var isCurrentMonth = (year === now.getFullYear() && month === now.getMonth());
+      prevBtn.disabled = isCurrentMonth;
+
+      var todayStrVal = todayStr();
+      var firstOfMonth = new Date(year, month, 1);
+      var startWeekday = firstOfMonth.getDay();
+      var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      gridEl.innerHTML = '';
+      ['日', '月', '火', '水', '木', '金', '土'].forEach(function (w) {
+        var el = document.createElement('div');
+        el.className = 'mc-weekday';
+        el.textContent = w;
+        gridEl.appendChild(el);
+      });
+      for (var i = 0; i < startWeekday; i++) {
+        var pad = document.createElement('div');
+        pad.className = 'mc-cell mc-other';
+        gridEl.appendChild(pad);
+      }
+      for (var day = 1; day <= daysInMonth; day++) {
+        var dStr = formatDateStr(new Date(year, month, day));
+        var matchedBooking = itemBookings.filter(function (b) { return b.startDate <= dStr && dStr <= b.endDate; })[0];
+        var booked = !!matchedBooking;
+        var cell = document.createElement('div');
+        cell.className = 'mc-cell' + (booked ? ' mc-booked' : '') + (dStr === todayStrVal ? ' mc-today' : '');
+        cell.textContent = String(day);
+        (function (clickedDate, existingBooking) {
+          cell.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (existingBooking) {
+              // すでに予約が入っている日をタップした場合は、その予約の編集画面を開く
+              // （編集画面には削除ボタンがあるので、そこから削除できる）
+              closeEquipmentCategoryDetail();
+              openEditForm(existingBooking);
+            } else {
+              openAddFormForDate(name, clickedDate);
+            }
+          });
+        })(dStr, matchedBooking);
+        gridEl.appendChild(cell);
+      }
+    }
+
+    prevBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (prevBtn.disabled) return;
+      month--; if (month < 0) { month = 11; year--; }
+      renderMonth();
+    });
+    nextBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      month++; if (month > 11) { month = 0; year++; }
+      renderMonth();
+    });
+
+    renderMonth();
+  }
+
+  // ---------- 機材の状況：カテゴリの詳細シート ----------
+  function openEquipmentCategoryDetail(categoryName, names, byEquipment) {
+    document.getElementById('equipment-detail-title').textContent = categoryName;
+
+    var sortedNames = names.slice().sort(function (a, b) {
+      var pa = statusPriority(byEquipment[a] || { current: [], upcoming: [] });
+      var pb = statusPriority(byEquipment[b] || { current: [], upcoming: [] });
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b, 'ja');
+    });
+
+    document.getElementById('equipment-detail-summary').textContent =
+      sortedNames.length + '件の機材';
+
+    var listEl = document.getElementById('equipment-detail-list');
+    var jumpEl = document.getElementById('equipment-detail-jump');
+    listEl.innerHTML = '';
+    jumpEl.innerHTML = '';
+
+    sortedNames.forEach(function (name, idx) {
+      var entry = byEquipment[name] || { current: [], upcoming: [] };
+      var cardId = 'equip-card-' + idx;
+      var statusClass = statusPriority(entry) === 0 ? 'inuse' : (statusPriority(entry) === 1 ? 'upcoming' : 'free');
+
+      var card = buildEquipmentStatusCard(name, entry);
+      card.id = cardId;
+      listEl.appendChild(card);
+
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'jump-chip ' + statusClass;
+      chip.textContent = name;
+      chip.addEventListener('click', function () {
+        var target = document.getElementById(cardId);
+        if (!target) return;
+        // 固定表示中のヘッダー（← 戻る の行）の高さぶん、余分にずらしてスクロールする。
+        // そうしないと、カードの上端がヘッダーの裏に隠れてしまう。
+        var container = document.getElementById('equipment-detail-scroll');
+        var sticky = document.getElementById('equipment-detail-sticky');
+        var stickyHeight = sticky ? sticky.offsetHeight : 0;
+        var targetTop = target.offsetTop - stickyHeight - 10;
+        container.scrollTo({ top: Math.max(targetTop, 0), behavior: 'smooth' });
+        target.classList.add('flash');
+        setTimeout(function () { target.classList.remove('flash'); }, 900);
+      });
+      jumpEl.appendChild(chip);
+    });
+
+    document.getElementById('equipment-detail-overlay').classList.add('show');
+    // 前回開いたときのスクロール位置が残らないよう、毎回先頭に戻す
+    document.getElementById('equipment-detail-scroll').scrollTop = 0;
+  }
+  function closeEquipmentCategoryDetail() {
+    document.getElementById('equipment-detail-overlay').classList.remove('show');
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ---------- データ取得 ----------
+  function refreshBookings() {
+    showLoading('読み込み中...');
+    return apiGet('bookings', { sinceDays: 30 }).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showBanner('データの取得に失敗しました: ' + res.error, 'error');
+        return;
+      }
+      hideBanner();
+      bookings = res.bookings;
+      renderCurrentView();
+    }).catch(function (err) {
+      hideLoading();
+      showBanner('通信エラー: ' + err.message, 'error');
+    });
+  }
+
+  function refreshEquipmentList() {
+    return apiGet('equipment').then(function (res) {
+      if (res.ok) {
+        equipmentList = res.equipment;
+        var dl = document.getElementById('equipment-list');
+        dl.innerHTML = '';
+        equipmentList.forEach(function (name) {
+          var opt = document.createElement('option');
+          opt.value = name;
+          dl.appendChild(opt);
+        });
+        try { localStorage.setItem('kizai_equipment_cache_v1', JSON.stringify(equipmentList)); } catch (e) {}
+        renderCurrentView();
+      }
+    }).catch(function () { /* 機材一覧が取れなくても致命的ではない（前回キャッシュを使う） */ });
+  }
+
+  function loadCachedEquipmentList() {
+    try {
+      var raw = localStorage.getItem('kizai_equipment_cache_v1');
+      if (raw) {
+        equipmentList = JSON.parse(raw);
+        var dl = document.getElementById('equipment-list');
+        dl.innerHTML = '';
+        equipmentList.forEach(function (name) {
+          var opt = document.createElement('option');
+          opt.value = name;
+          dl.appendChild(opt);
+        });
+      }
+    } catch (e) { /* 無視 */ }
+  }
+
+  // ---------- カテゴリ別の機材一覧（予約フォームの絞り込み用） ----------
+  function refreshEquipmentCategories() {
+    return apiGet('equipmentByCategory').then(function (res) {
+      if (res.ok) {
+        setEquipmentCategories(res.categories);
+        try { localStorage.setItem('kizai_category_cache_v1', JSON.stringify(res.categories)); } catch (e) {}
+      }
+    }).catch(function () { /* 取得できなくても致命的ではない（前回キャッシュを使う） */ });
+  }
+
+  function loadCachedEquipmentCategories() {
+    try {
+      var raw = localStorage.getItem('kizai_category_cache_v1');
+      if (raw) setEquipmentCategories(JSON.parse(raw));
+    } catch (e) { /* 無視 */ }
+  }
+
+  function setEquipmentCategories(categories) {
+    equipmentByCategory = {};
+    categoryOrder = [];
+    (categories || []).forEach(function (c) {
+      equipmentByCategory[c.category] = c.items;
+      categoryOrder.push(c.category);
+    });
+    populateCategorySelect();
+  }
+
+  function populateCategorySelect() {
+    var sel = document.getElementById('f-category');
+    var current = sel.value;
+    sel.innerHTML = '<option value="">すべて表示</option>';
+    categoryOrder.forEach(function (cat) {
+      var opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat + '（' + equipmentByCategory[cat].length + '）';
+      sel.appendChild(opt);
+    });
+    if (current && categoryOrder.indexOf(current) !== -1) sel.value = current;
+  }
+
+  // 選んだカテゴリに応じて、機材名の候補（datalist）を絞り込む
+  function updateEquipmentDatalist(filterCategory) {
+    var dl = document.getElementById('equipment-list');
+    dl.innerHTML = '';
+    var names = (filterCategory && equipmentByCategory[filterCategory])
+      ? equipmentByCategory[filterCategory]
+      : equipmentList;
+    names.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      dl.appendChild(opt);
+    });
+  }
+
+  function findCategoryForEquipment(name) {
+    for (var i = 0; i < categoryOrder.length; i++) {
+      var cat = categoryOrder[i];
+      if (equipmentByCategory[cat].indexOf(name) !== -1) return cat;
+    }
+    return '';
+  }
+
+  // ---------- 追加・編集フォーム ----------
+  function openAddForm() {
+    editingRow = null;
+    document.getElementById('form-title').textContent = '予約を追加';
+    document.getElementById('f-project').value = '';
+    document.getElementById('f-category').value = '';
+    document.getElementById('f-equipment').value = '';
+    document.getElementById('f-quantity').value = '';
+    document.getElementById('f-supplier').value = '';
+    document.getElementById('f-start').value = '';
+    document.getElementById('f-end').value = '';
+    document.getElementById('f-note').value = '';
+    updateEquipmentDatalist('');
+    document.getElementById('form-delete').style.display = 'none';
+    hideFormError();
+    document.getElementById('form-overlay').classList.add('show');
+  }
+
+  // 機材カードのカレンダーで日付をタップしたときに呼ばれる。その機材・その日を
+  // あらかじめ入れた状態で、予約追加フォームを開く（開始日・終了日は同じ日を仮設定、
+  // 終了日は必要に応じて後から変更してもらう）。
+  function openAddFormForDate(equipmentName, dateStr) {
+    closeEquipmentCategoryDetail();
+    openAddForm();
+    var cat = findCategoryForEquipment(equipmentName);
+    document.getElementById('f-category').value = cat;
+    updateEquipmentDatalist(cat);
+    document.getElementById('f-equipment').value = equipmentName;
+    document.getElementById('f-start').value = toDateInputValue(dateStr);
+    document.getElementById('f-end').value = toDateInputValue(dateStr);
+  }
+
+  function openEditForm(b) {
+    editingRow = b.row;
+    document.getElementById('form-title').textContent = '予約を編集（' + b.row + '行目）';
+    document.getElementById('f-project').value = b.project || '';
+    var cat = findCategoryForEquipment(b.equipment);
+    document.getElementById('f-category').value = cat;
+    updateEquipmentDatalist(cat);
+    document.getElementById('f-equipment').value = b.equipment || '';
+    document.getElementById('f-quantity').value = b.quantity || '';
+    document.getElementById('f-supplier').value = b.supplier || '';
+    document.getElementById('f-start').value = toDateInputValue(b.startDate);
+    document.getElementById('f-end').value = toDateInputValue(b.endDate);
+    document.getElementById('f-note').value = b.note || '';
+    document.getElementById('form-delete').style.display = 'block';
+    hideFormError();
+    document.getElementById('form-overlay').classList.add('show');
+  }
+
+  function toDateInputValue(yyyymmddSlash) {
+    if (!yyyymmddSlash) return '';
+    return yyyymmddSlash.replace(/\//g, '-');
+  }
+  function fromDateInputValue(yyyymmddDash) {
+    if (!yyyymmddDash) return '';
+    return yyyymmddDash.replace(/-/g, '/');
+  }
+
+  function closeForm() {
+    document.getElementById('form-overlay').classList.remove('show');
+  }
+  function showFormError(msg) {
+    var el = document.getElementById('form-error');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function hideFormError() {
+    document.getElementById('form-error').classList.remove('show');
+  }
+
+  function submitForm() {
+    var project = document.getElementById('f-project').value.trim();
+    var equipment = document.getElementById('f-equipment').value.trim();
+    var quantity = document.getElementById('f-quantity').value.trim();
+    var supplier = document.getElementById('f-supplier').value.trim();
+    var start = fromDateInputValue(document.getElementById('f-start').value);
+    var end = fromDateInputValue(document.getElementById('f-end').value);
+    var note = document.getElementById('f-note').value.trim();
+
+    hideFormError();
+    if (!project) { showFormError('作品名を入力してください'); return; }
+    if (!equipment) { showFormError('機材名を入力してください'); return; }
+    if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
+      showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
+      return;
+    }
+    if (!start || !end) { showFormError('開始日・終了日を入力してください'); return; }
+
+    var body = {
+      action: editingRow ? 'updateBooking' : 'addBooking',
+      project: project,
+      equipment: equipment,
+      quantity: quantity ? Number(quantity) : undefined,
+      supplier: supplier,
+      startDate: start,
+      endDate: end,
+      note: note
+    };
+    if (editingRow) body.row = editingRow;
+
+    showLoading(editingRow ? '更新中...' : '登録中...');
+    apiPost(body).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showFormError(res.error || '保存に失敗しました');
+        return;
+      }
+      closeForm();
+      if (res.overlap) {
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
+      } else if (res.warning) {
+        showBanner(res.warning, 'warn');
+      } else {
+        showBanner(res.message || '保存しました。', 'info');
+        setTimeout(hideBanner, 4000);
+      }
+      refreshBookings();
+    }).catch(function (err) {
+      hideLoading();
+      showFormError('通信エラー: ' + err.message);
+    });
+  }
+
+  function deleteCurrentBooking() {
+    if (!editingRow) return;
+    var ok = window.confirm('この予約を削除します。よろしいですか？\n（この操作は取り消せません）');
+    if (!ok) return;
+
+    showLoading('削除中...');
+    apiPost({ action: 'deleteBooking', row: editingRow }).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showFormError(res.error || '削除に失敗しました');
+        return;
+      }
+      closeForm();
+      if (res.overlap) {
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
+      } else if (res.warning) {
+        showBanner(res.warning, 'warn');
+      } else {
+        showBanner(res.message || '予約を削除しました。', 'info');
+        setTimeout(hideBanner, 4000);
+      }
+      refreshBookings();
+    }).catch(function (err) {
+      hideLoading();
+      showFormError('通信エラー: ' + err.message);
+    });
+  }
+
+  // ---------- ガントチャート表示・更新 ----------
+  // マスターガントチャートのタブへ直接飛ぶURL（固定）。
+  // スプレッドシートのファイルID自体は変わらないため、通信不要でここに直接書いておく。
+  var GANTT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/19anYDwAFO_VJdrKJp0cGMuFKgcNhdG1pVNPCDJaNbsY/edit#gid=1048290200';
+
+  function openGanttChart() {
+    // 新しいタブで開くので、このアプリ自体の画面や操作位置はそのまま残る
+    window.open(GANTT_SHEET_URL, '_blank');
+  }
+
+  function refreshGanttChart() {
+    var ok = window.confirm('ガントチャートを最新の内容に更新します。よろしいですか？');
+    if (!ok) return;
+    showLoading('ガントチャートを更新中...（機材件数が多いと時間がかかります）');
+    apiPost({ action: 'refreshGantt' }).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showBanner(res.error || 'ガントチャートの更新に失敗しました', 'error');
+        return;
+      }
+      if (res.overlap) {
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
+      } else {
+        showBanner(res.message || 'ガントチャートを更新しました。', 'info');
+        setTimeout(hideBanner, 4000);
+      }
+    }).catch(function (err) {
+      hideLoading();
+      showBanner('通信エラー: ' + err.message, 'error');
+    });
+  }
+
+  // ---------- 設定画面 ----------
+  function openSettings() {
+    document.getElementById('settings-url').value = settings.url;
+    document.getElementById('settings-token').value = settings.token;
+    document.getElementById('settings-error').classList.remove('show');
+    document.getElementById('settings-overlay').classList.add('show');
+  }
+  function closeSettings() {
+    if (!hasSettings()) return; // 未設定の状態では閉じさせない（データが読み込めないため）
+    document.getElementById('settings-overlay').classList.remove('show');
+  }
+  function saveSettingsAndConnect() {
+    var url = document.getElementById('settings-url').value.trim();
+    var token = document.getElementById('settings-token').value.trim();
+    var errEl = document.getElementById('settings-error');
+    if (!url || !token) {
+      errEl.textContent = 'URLと合言葉の両方を入力してください';
+      errEl.classList.add('show');
+      return;
+    }
+    settings = { url: url, token: token };
+    saveSettings();
+    document.getElementById('settings-overlay').classList.remove('show');
+    initialLoad();
+  }
+
+  // ---------- 初期化 ----------
+  function initialLoad() {
+    loadCachedEquipmentList();
+    loadCachedEquipmentCategories();
+    refreshEquipmentList();
+    refreshEquipmentCategories();
+    refreshBookings();
+  }
+
+  document.getElementById('settings-btn').addEventListener('click', openSettings);
+  document.getElementById('settings-cancel').addEventListener('click', closeSettings);
+  document.getElementById('settings-save').addEventListener('click', saveSettingsAndConnect);
+  document.getElementById('add-fab').addEventListener('click', openAddForm);
+  document.getElementById('form-cancel').addEventListener('click', closeForm);
+  document.getElementById('form-save').addEventListener('click', submitForm);
+  document.getElementById('form-delete').addEventListener('click', deleteCurrentBooking);
+  document.getElementById('project-detail-close').addEventListener('click', closeProjectDetail);
+  document.getElementById('equipment-detail-close').addEventListener('click', closeEquipmentCategoryDetail);
+  document.getElementById('settings-back').addEventListener('click', closeSettings);
+  document.getElementById('form-back').addEventListener('click', closeForm);
+  document.getElementById('project-detail-back').addEventListener('click', closeProjectDetail);
+  document.getElementById('equipment-detail-back').addEventListener('click', closeEquipmentCategoryDetail);
+  document.getElementById('f-category').addEventListener('change', function () {
+    updateEquipmentDatalist(this.value);
+    document.getElementById('f-equipment').value = '';
+  });
+  document.getElementById('search-input').addEventListener('input', renderCurrentView);
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { switchView(btn.dataset.view); });
+  });
+  document.getElementById('gantt-view-btn').addEventListener('click', openGanttChart);
+  document.getElementById('gantt-refresh-btn').addEventListener('click', refreshGanttChart);
+
+  loadSettings();
+  if (hasSettings()) {
+    initialLoad();
+  } else {
+    openSettings();
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').catch(function () { /* 登録失敗しても致命的ではない */ });
+    });
+  }
+})();
+</script>
+</body>
+</html>
