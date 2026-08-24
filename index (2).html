@@ -498,19 +498,22 @@
       groups[key].push(b);
     });
 
-    // 各グループ内は終了日が近い順、グループ自体は「グループ内で最も早い終了日」順に並べる
-    groupOrder.forEach(function (key) {
-      groups[key].sort(function (a, b) {
-        if (!a.endDate) return 1;
-        if (!b.endDate) return -1;
-        return a.endDate < b.endDate ? -1 : (a.endDate > b.endDate ? 1 : 0);
+    // 【2026/8/24変更】グループ内（同じ作品名の機材の並び順）は変更せず、機材リストシートでの
+    // 行の並び順のまま表示する（あえてソートしない＝APIから届いた順＝シートの行順）。
+    // グループ（作品名の見出し）自体の並び順は、「そのグループの中で一番遅い（先の）開始日」を
+    // 基準に、新しい順（開始日が遅いもの＝未来の予定が上）にする。
+    function groupMaxStartDate(key) {
+      var max = '';
+      groups[key].forEach(function (b) {
+        if (b.startDate && b.startDate > max) max = b.startDate;
       });
-    });
+      return max;
+    }
     groupOrder.sort(function (ka, kb) {
-      var a = groups[ka][0].endDate, b = groups[kb][0].endDate;
+      var a = groupMaxStartDate(ka), b = groupMaxStartDate(kb);
       if (!a) return 1;
       if (!b) return -1;
-      return a < b ? -1 : (a > b ? 1 : 0);
+      return a < b ? 1 : (a > b ? -1 : 0); // 降順（開始日が遅いグループほど上）
     });
 
     groupOrder.forEach(function (key) {
