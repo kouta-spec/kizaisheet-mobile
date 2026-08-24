@@ -85,9 +85,18 @@
 
   .group-header {
     font-size: 13px; font-weight: 700; color: var(--blue-dark);
-    margin: 10px 2px -2px; padding-top: 4px;
+    margin: 10px 2px -2px; padding: 8px 10px; cursor: pointer;
+    background: #e8f0fe; border-radius: 8px;
+    display: flex; justify-content: space-between; align-items: center;
   }
   .group-header:first-child { margin-top: 0; }
+  .group-header .chevron { color: var(--blue-dark); font-size: 14px; }
+
+  .mini-timeline { display: flex; gap: 2px; margin-top: 8px; }
+  .tl-cell { flex: 1; height: 14px; border-radius: 2px; background: #e6e6e6; }
+  .tl-cell.booked { background: var(--red); }
+  .tl-cell.today { box-shadow: 0 0 0 1.5px var(--blue) inset; }
+  .tl-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--sub); margin-top: 3px; }
 
   .card.status-inuse { border-left-color: var(--red); }
   .card.status-upcoming { border-left-color: var(--orange); }
@@ -261,6 +270,18 @@
   </div>
 </div>
 
+<!-- 作品の詳細（グループ見出しをタップすると表示） -->
+<div class="sheet-overlay" id="project-detail-overlay">
+  <div class="sheet">
+    <h2 id="project-detail-title"></h2>
+    <div class="hint" id="project-detail-summary"></div>
+    <div id="project-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="project-detail-close">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div id="loading-overlay">
   <div class="big-spinner"></div>
   <div class="loading-text" id="loading-text">更新中...</div>
@@ -350,10 +371,42 @@
   }
 
   function todayStr() {
-    var d = new Date();
+    return formatDateStr(new Date());
+  }
+
+  function formatDateStr(d) {
     var m = String(d.getMonth() + 1).padStart(2, '0');
     var day = String(d.getDate()).padStart(2, '0');
     return d.getFullYear() + '/' + m + '/' + day;
+  }
+
+  var TIMELINE_DAYS = 14;
+
+  function buildTimelineDates() {
+    var dates = [];
+    var base = new Date();
+    base.setHours(0, 0, 0, 0);
+    for (var i = 0; i < TIMELINE_DAYS; i++) {
+      var d = new Date(base);
+      d.setDate(base.getDate() + i);
+      dates.push(formatDateStr(d));
+    }
+    return dates;
+  }
+
+  // 直近14日間を「予約あり／空き」の帯で見せる、簡易ガントチャート
+  function buildMiniTimelineHtml(entry, timelineDates) {
+    var allBookings = entry.current.concat(entry.upcoming);
+    var cells = timelineDates.map(function (dateStr, idx) {
+      var booked = allBookings.some(function (b) { return b.startDate <= dateStr && dateStr <= b.endDate; });
+      var cls = 'tl-cell ' + (booked ? 'booked' : 'free') + (idx === 0 ? ' today' : '');
+      return '<div class="' + cls + '"></div>';
+    }).join('');
+    var lastDate = timelineDates[timelineDates.length - 1];
+    return (
+      '<div class="mini-timeline">' + cells + '</div>' +
+      '<div class="tl-labels"><span>今日 ' + escapeHtml(timelineDates[0]) + '</span><span>' + escapeHtml(lastDate) + '</span></div>'
+    );
   }
 
   // ---------- 予約一覧（作品ごとにグループ表示） ----------
@@ -403,7 +456,10 @@
     groupOrder.forEach(function (key) {
       var header = document.createElement('div');
       header.className = 'group-header';
-      header.textContent = key + '（' + groups[key].length + '件）';
+      header.innerHTML =
+        '<span>' + escapeHtml(key) + '（' + groups[key].length + '件）</span>' +
+        '<span class="chevron">詳細 ›</span>';
+      header.addEventListener('click', function () { openProjectDetail(key, groups[key]); });
       listEl.appendChild(header);
       groups[key].forEach(function (b) {
         listEl.appendChild(buildBookingCard(b));
@@ -411,7 +467,7 @@
     });
   }
 
-  function buildBookingCard(b) {
+  function buildBookingCard(b, onClick) {
     var card = document.createElement('div');
     card.className = 'card' + (b.supplier ? ' supplier' : '');
 
@@ -433,8 +489,43 @@
         (b.quantity ? '　数量: ' + escapeHtml(String(b.quantity)) : '') + '</div>' +
       (badgesHtml ? '<div class="badges">' + badgesHtml + '</div>' : '');
 
-    card.addEventListener('click', function () { openEditForm(b); });
+    card.addEventListener('click', function () { (onClick || openEditForm)(b); });
     return card;
+  }
+
+  // ---------- 作品の詳細シート ----------
+  function openProjectDetail(projectName, items) {
+    document.getElementById('project-detail-title').textContent = projectName;
+
+    var totalPrice = 0, hasPrice = false;
+    var minStart = null, maxEnd = null;
+    items.forEach(function (b) {
+      var n = Number(b.price);
+      if (b.price !== '' && b.price !== null && b.price !== undefined && !isNaN(n)) {
+        totalPrice += n;
+        hasPrice = true;
+      }
+      if (b.startDate && (!minStart || b.startDate < minStart)) minStart = b.startDate;
+      if (b.endDate && (!maxEnd || b.endDate > maxEnd)) maxEnd = b.endDate;
+    });
+    var summary = items.length + '件の機材';
+    if (minStart && maxEnd) summary += '　期間: ' + minStart + '〜' + maxEnd;
+    if (hasPrice) summary += '　合計金額: ' + totalPrice.toLocaleString() + '円';
+    document.getElementById('project-detail-summary').textContent = summary;
+
+    var listEl = document.getElementById('project-detail-list');
+    listEl.innerHTML = '';
+    items.forEach(function (b) {
+      listEl.appendChild(buildBookingCard(b, function (bk) {
+        closeProjectDetail();
+        openEditForm(bk);
+      }));
+    });
+
+    document.getElementById('project-detail-overlay').classList.add('show');
+  }
+  function closeProjectDetail() {
+    document.getElementById('project-detail-overlay').classList.remove('show');
   }
 
   // ---------- 機材の状況（全機材を使用中／予約あり／空きで色分け表示） ----------
@@ -500,6 +591,8 @@
     }
     emptyEl.style.display = 'none';
 
+    var timelineDates = buildTimelineDates();
+
     names.forEach(function (name) {
       var entry = byEquipment[name];
       entry.upcoming.sort(function (a, b) {
@@ -532,7 +625,8 @@
           '<div class="equipment">' + escapeHtml(name) + '</div>' +
           badgeHtml +
         '</div>' +
-        '<div class="period">' + detailHtml + '</div>';
+        '<div class="period">' + detailHtml + '</div>' +
+        buildMiniTimelineHtml(entry, timelineDates);
 
       card.addEventListener('click', function () {
         document.getElementById('search-input').value = name;
@@ -741,6 +835,7 @@
   document.getElementById('add-fab').addEventListener('click', openAddForm);
   document.getElementById('form-cancel').addEventListener('click', closeForm);
   document.getElementById('form-save').addEventListener('click', submitForm);
+  document.getElementById('project-detail-close').addEventListener('click', closeProjectDetail);
   document.getElementById('search-input').addEventListener('input', renderCurrentView);
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
