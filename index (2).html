@@ -517,10 +517,13 @@
     });
 
     groupOrder.forEach(function (key) {
+      // 期間表示は、そのグループの先頭（一番上）にある予約の開始日・終了日を使う
+      var head = groups[key][0];
+      var periodText = (head.startDate && head.endDate) ? '　' + head.startDate + '〜' + head.endDate : '';
       var header = document.createElement('div');
       header.className = 'group-header';
       header.innerHTML =
-        '<span>' + escapeHtml(key) + '（' + groups[key].length + '件）</span>' +
+        '<span>' + escapeHtml(key) + '（' + groups[key].length + '件）' + escapeHtml(periodText) + '</span>' +
         '<span class="chevron">詳細 ›</span>';
       header.addEventListener('click', function () { openProjectDetail(key, groups[key]); });
       listEl.appendChild(header);
@@ -733,19 +736,11 @@
 
     attachInlineCalendar(card, entry, name);
 
-    // カレンダー部分（曜日の見出し・余白・ナビゲーション矢印など、日付以外の場所も含めて
-    // 全て）をタップしたときは、カードの「予約一覧タブへ移動」という動きを起こさない。
-    // カレンダーを操作しようとしただけなのに、画面が切り替わって迷ってしまう、という
-    // 声があったための対応。
-    card.querySelector('.mini-cal').addEventListener('click', function (e) {
-      e.stopPropagation();
-    });
-
-    card.addEventListener('click', function () {
-      closeEquipmentCategoryDetail();
-      document.getElementById('search-input').value = name;
-      switchView('bookings');
-    });
+    // 【2026/8/24再修正】「カード全体をタップすると予約一覧タブへ移動する」という動きは、
+    // カレンダーが大きくなってからは、カレンダーの余白や日付以外の場所をタップした
+    // だけでも意図せず画面が切り替わってしまい、分かりにくいという指摘が続いたため撤去した。
+    // 今はカード自体をタップしても何も起きない（カレンダーの日付タップ・矢印タップだけが
+    // それぞれの動きをする）。
     return card;
   }
 
