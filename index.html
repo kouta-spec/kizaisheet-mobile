@@ -776,16 +776,24 @@
       }
       for (var day = 1; day <= daysInMonth; day++) {
         var dStr = formatDateStr(new Date(year, month, day));
-        var booked = itemBookings.some(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
+        var matchedBooking = itemBookings.filter(function (b) { return b.startDate <= dStr && dStr <= b.endDate; })[0];
+        var booked = !!matchedBooking;
         var cell = document.createElement('div');
         cell.className = 'mc-cell' + (booked ? ' mc-booked' : '') + (dStr === todayStrVal ? ' mc-today' : '');
         cell.textContent = String(day);
-        (function (clickedDate) {
+        (function (clickedDate, existingBooking) {
           cell.addEventListener('click', function (e) {
             e.stopPropagation();
-            openAddFormForDate(name, clickedDate);
+            if (existingBooking) {
+              // すでに予約が入っている日をタップした場合は、その予約の編集画面を開く
+              // （編集画面には削除ボタンがあるので、そこから削除できる）
+              closeEquipmentCategoryDetail();
+              openEditForm(existingBooking);
+            } else {
+              openAddFormForDate(name, clickedDate);
+            }
           });
-        })(dStr);
+        })(dStr, matchedBooking);
         gridEl.appendChild(cell);
       }
     }
