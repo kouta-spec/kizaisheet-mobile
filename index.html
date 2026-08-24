@@ -43,6 +43,13 @@
     background: none; border: none; color: white; font-size: 20px;
     padding: 6px 8px; cursor: pointer;
   }
+  .tabs { display: flex; gap: 8px; padding: 10px 14px 0; }
+  .tab-btn {
+    flex: 1; padding: 9px 0; border-radius: 8px; border: 1px solid var(--border);
+    background: white; font-size: 13px; font-weight: 600; color: var(--sub); cursor: pointer;
+  }
+  .tab-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+
   .search-bar { padding: 10px 14px; background: var(--bg); }
   .search-bar input {
     width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
@@ -75,6 +82,27 @@
   }
   .badge.supplier { background: #fef0d8; color: #a35a00; }
   .badge.returned { background: #e6f4ea; color: var(--green); }
+
+  .group-header {
+    font-size: 13px; font-weight: 700; color: var(--blue-dark);
+    margin: 10px 2px -2px; padding-top: 4px;
+  }
+  .group-header:first-child { margin-top: 0; }
+
+  .card.status-inuse { border-left-color: var(--red); }
+  .card.status-upcoming { border-left-color: var(--orange); }
+  .card.status-free { border-left-color: var(--green); }
+  .status-badge {
+    font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; white-space: nowrap;
+  }
+  .status-badge.inuse { background: #fce8e6; color: var(--red); }
+  .status-badge.upcoming { background: #fef7e0; color: #a35a00; }
+  .status-badge.free { background: #e6f4ea; color: var(--green); }
+
+  .summary-bar {
+    font-size: 12px; color: var(--sub); padding: 0 2px 10px; display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  .summary-bar b { color: var(--text); }
 
   #empty { text-align: center; color: var(--sub); padding: 60px 20px; font-size: 14px; }
 
@@ -148,11 +176,17 @@
     <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
   </header>
 
+  <div class="tabs" id="view-tabs">
+    <button class="tab-btn active" data-view="bookings">予約一覧</button>
+    <button class="tab-btn" data-view="equipment">機材の状況</button>
+  </div>
+
   <div class="search-bar">
     <input type="text" id="search-input" placeholder="機材名・作品名で検索">
   </div>
 
   <div id="status-banner"></div>
+  <div class="summary-bar" id="summary-bar" style="display:none;"></div>
   <div id="list"></div>
   <div id="empty" style="display:none;">予約データがありません</div>
 
@@ -241,6 +275,7 @@
   var bookings = [];
   var equipmentList = [];
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
+  var currentView = 'bookings'; // 'bookings' または 'equipment'
 
   // ---------- 設定の読み書き ----------
   function loadSettings() {
@@ -295,8 +330,35 @@
     document.getElementById('loading-overlay').classList.remove('show');
   }
 
-  // ---------- 一覧の描画 ----------
-  function renderList() {
+  // ---------- タブ切り替え ----------
+  function switchView(view) {
+    currentView = view;
+    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    document.getElementById('search-input').placeholder =
+      view === 'bookings' ? '機材名・作品名で検索' : '機材名で検索';
+    renderCurrentView();
+  }
+
+  function renderCurrentView() {
+    if (currentView === 'equipment') {
+      renderEquipmentStatus();
+    } else {
+      renderBookingsGrouped();
+    }
+  }
+
+  function todayStr() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '/' + m + '/' + day;
+  }
+
+  // ---------- 予約一覧（作品ごとにグループ表示） ----------
+  function renderBookingsGrouped() {
+    document.getElementById('summary-bar').style.display = 'none';
     var keyword = document.getElementById('search-input').value.trim().toLowerCase();
     var listEl = document.getElementById('list');
     var emptyEl = document.getElementById('empty');
@@ -307,43 +369,175 @@
       return (b.equipment + ' ' + b.project).toLowerCase().indexOf(keyword) !== -1;
     });
 
-    // 終了日が近い順に並べる（終了日不明のものは末尾）
-    filtered.sort(function (a, b) {
-      if (!a.endDate) return 1;
-      if (!b.endDate) return -1;
-      return a.endDate < b.endDate ? -1 : (a.endDate > b.endDate ? 1 : 0);
-    });
-
     if (filtered.length === 0) {
+      emptyEl.textContent = '予約データがありません';
       emptyEl.style.display = 'block';
       return;
     }
     emptyEl.style.display = 'none';
 
+    // 作品名ごとにグループ化
+    var groups = {};
+    var groupOrder = [];
     filtered.forEach(function (b) {
-      var card = document.createElement('div');
-      card.className = 'card' + (b.supplier ? ' supplier' : '');
+      var key = b.project || '（作品名未入力）';
+      if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+      groups[key].push(b);
+    });
 
-      var priceText = '';
-      if (b.price !== '' && b.price !== null && b.price !== undefined) {
-        priceText = String(b.price);
+    // 各グループ内は終了日が近い順、グループ自体は「グループ内で最も早い終了日」順に並べる
+    groupOrder.forEach(function (key) {
+      groups[key].sort(function (a, b) {
+        if (!a.endDate) return 1;
+        if (!b.endDate) return -1;
+        return a.endDate < b.endDate ? -1 : (a.endDate > b.endDate ? 1 : 0);
+      });
+    });
+    groupOrder.sort(function (ka, kb) {
+      var a = groups[ka][0].endDate, b = groups[kb][0].endDate;
+      if (!a) return 1;
+      if (!b) return -1;
+      return a < b ? -1 : (a > b ? 1 : 0);
+    });
+
+    groupOrder.forEach(function (key) {
+      var header = document.createElement('div');
+      header.className = 'group-header';
+      header.textContent = key + '（' + groups[key].length + '件）';
+      listEl.appendChild(header);
+      groups[key].forEach(function (b) {
+        listEl.appendChild(buildBookingCard(b));
+      });
+    });
+  }
+
+  function buildBookingCard(b) {
+    var card = document.createElement('div');
+    card.className = 'card' + (b.supplier ? ' supplier' : '');
+
+    var priceText = '';
+    if (b.price !== '' && b.price !== null && b.price !== undefined) {
+      priceText = String(b.price);
+    }
+
+    var badgesHtml = '';
+    if (b.supplier) badgesHtml += '<span class="badge supplier">発注先: ' + escapeHtml(b.supplier) + '</span>';
+    if (b.returnCheck === '返却済み') badgesHtml += '<span class="badge returned">返却済み</span>';
+
+    card.innerHTML =
+      '<div class="row1">' +
+        '<div class="equipment">' + escapeHtml(b.equipment) + '</div>' +
+        '<div class="price">' + escapeHtml(priceText) + '</div>' +
+      '</div>' +
+      '<div class="period">' + escapeHtml(b.startDate || '?') + ' 〜 ' + escapeHtml(b.endDate || '?') +
+        (b.quantity ? '　数量: ' + escapeHtml(String(b.quantity)) : '') + '</div>' +
+      (badgesHtml ? '<div class="badges">' + badgesHtml + '</div>' : '');
+
+    card.addEventListener('click', function () { openEditForm(b); });
+    return card;
+  }
+
+  // ---------- 機材の状況（全機材を使用中／予約あり／空きで色分け表示） ----------
+  function buildEquipmentStatusMap() {
+    var today = todayStr();
+    var byEquipment = {};
+    equipmentList.forEach(function (name) { byEquipment[name] = { current: [], upcoming: [] }; });
+    bookings.forEach(function (b) {
+      if (!b.equipment || !b.startDate || !b.endDate) return;
+      if (!byEquipment[b.equipment]) byEquipment[b.equipment] = { current: [], upcoming: [] };
+      var entry = byEquipment[b.equipment];
+      if (b.startDate <= today && today <= b.endDate) {
+        entry.current.push(b);
+      } else if (b.startDate > today) {
+        entry.upcoming.push(b);
       }
+    });
+    return byEquipment;
+  }
 
-      var badgesHtml = '';
-      if (b.supplier) badgesHtml += '<span class="badge supplier">発注先: ' + escapeHtml(b.supplier) + '</span>';
-      if (b.returnCheck === '返却済み') badgesHtml += '<span class="badge returned">返却済み</span>';
+  function statusPriority(entry) {
+    if (entry.current.length) return 0;
+    if (entry.upcoming.length) return 1;
+    return 2;
+  }
+
+  function renderEquipmentStatus() {
+    var keyword = document.getElementById('search-input').value.trim().toLowerCase();
+    var listEl = document.getElementById('list');
+    var emptyEl = document.getElementById('empty');
+    var summaryEl = document.getElementById('summary-bar');
+    listEl.innerHTML = '';
+
+    var byEquipment = buildEquipmentStatusMap();
+    var allNames = Object.keys(byEquipment);
+
+    var inuseCount = 0, upcomingCount = 0, freeCount = 0;
+    allNames.forEach(function (name) {
+      var p = statusPriority(byEquipment[name]);
+      if (p === 0) inuseCount++; else if (p === 1) upcomingCount++; else freeCount++;
+    });
+    summaryEl.innerHTML =
+      '全' + allNames.length + '件　' +
+      '<span>🔴 使用中: <b>' + inuseCount + '</b></span>' +
+      '<span>🟡 予約あり: <b>' + upcomingCount + '</b></span>' +
+      '<span>🟢 空き: <b>' + freeCount + '</b></span>';
+    summaryEl.style.display = 'flex';
+
+    var names = keyword
+      ? allNames.filter(function (name) { return name.toLowerCase().indexOf(keyword) !== -1; })
+      : allNames.slice();
+
+    names.sort(function (a, b) {
+      var pa = statusPriority(byEquipment[a]), pb = statusPriority(byEquipment[b]);
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b, 'ja');
+    });
+
+    if (names.length === 0) {
+      emptyEl.textContent = '該当する機材がありません';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    names.forEach(function (name) {
+      var entry = byEquipment[name];
+      entry.upcoming.sort(function (a, b) {
+        return a.startDate < b.startDate ? -1 : (a.startDate > b.startDate ? 1 : 0);
+      });
+
+      var statusClass = entry.current.length ? 'inuse' : (entry.upcoming.length ? 'upcoming' : 'free');
+      var card = document.createElement('div');
+      card.className = 'card status-' + statusClass;
+
+      var badgeHtml, detailHtml;
+      if (entry.current.length) {
+        badgeHtml = '<span class="status-badge inuse">使用中</span>';
+        detailHtml = entry.current.map(function (b) {
+          return escapeHtml(b.project || '（作品名未入力）') + '　〜' + escapeHtml(b.endDate) + 'まで';
+        }).join('<br>');
+      } else if (entry.upcoming.length) {
+        var next = entry.upcoming[0];
+        badgeHtml = '<span class="status-badge upcoming">予約あり</span>';
+        detailHtml = escapeHtml(next.startDate) + '〜' + escapeHtml(next.endDate) + '　' +
+          escapeHtml(next.project || '（作品名未入力）') +
+          (entry.upcoming.length > 1 ? '　他' + (entry.upcoming.length - 1) + '件' : '');
+      } else {
+        badgeHtml = '<span class="status-badge free">空き</span>';
+        detailHtml = '直近の予定はありません';
+      }
 
       card.innerHTML =
         '<div class="row1">' +
-          '<div class="equipment">' + escapeHtml(b.equipment) + '</div>' +
-          '<div class="price">' + escapeHtml(priceText) + '</div>' +
+          '<div class="equipment">' + escapeHtml(name) + '</div>' +
+          badgeHtml +
         '</div>' +
-        '<div class="project">' + escapeHtml(b.project || '（作品名未入力）') + '</div>' +
-        '<div class="period">' + escapeHtml(b.startDate || '?') + ' 〜 ' + escapeHtml(b.endDate || '?') +
-          (b.quantity ? '　数量: ' + escapeHtml(String(b.quantity)) : '') + '</div>' +
-        (badgesHtml ? '<div class="badges">' + badgesHtml + '</div>' : '');
+        '<div class="period">' + detailHtml + '</div>';
 
-      card.addEventListener('click', function () { openEditForm(b); });
+      card.addEventListener('click', function () {
+        document.getElementById('search-input').value = name;
+        switchView('bookings');
+      });
       listEl.appendChild(card);
     });
   }
@@ -365,7 +559,7 @@
       }
       hideBanner();
       bookings = res.bookings;
-      renderList();
+      renderCurrentView();
     }).catch(function (err) {
       hideLoading();
       showBanner('通信エラー: ' + err.message, 'error');
@@ -384,6 +578,7 @@
           dl.appendChild(opt);
         });
         try { localStorage.setItem('kizai_equipment_cache_v1', JSON.stringify(equipmentList)); } catch (e) {}
+        renderCurrentView();
       }
     }).catch(function () { /* 機材一覧が取れなくても致命的ではない（前回キャッシュを使う） */ });
   }
@@ -546,7 +741,10 @@
   document.getElementById('add-fab').addEventListener('click', openAddForm);
   document.getElementById('form-cancel').addEventListener('click', closeForm);
   document.getElementById('form-save').addEventListener('click', submitForm);
-  document.getElementById('search-input').addEventListener('input', renderList);
+  document.getElementById('search-input').addEventListener('input', renderCurrentView);
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { switchView(btn.dataset.view); });
+  });
 
   loadSettings();
   if (hasSettings()) {
