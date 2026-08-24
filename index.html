@@ -353,7 +353,7 @@
 
 <!-- 機材の状況：カテゴリの詳細（グループ見出しをタップすると表示） -->
 <div class="sheet-overlay" id="equipment-detail-overlay">
-  <div class="sheet">
+  <div class="sheet" id="equipment-detail-scroll">
     <div id="equipment-detail-sticky">
       <div class="sheet-header">
         <button type="button" class="sheet-back-btn" id="equipment-detail-back">← 戻る</button>
@@ -848,7 +848,13 @@
       chip.addEventListener('click', function () {
         var target = document.getElementById(cardId);
         if (!target) return;
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // 固定表示中のヘッダー（← 戻る の行）の高さぶん、余分にずらしてスクロールする。
+        // そうしないと、カードの上端がヘッダーの裏に隠れてしまう。
+        var container = document.getElementById('equipment-detail-scroll');
+        var sticky = document.getElementById('equipment-detail-sticky');
+        var stickyHeight = sticky ? sticky.offsetHeight : 0;
+        var targetTop = target.offsetTop - stickyHeight - 10;
+        container.scrollTo({ top: Math.max(targetTop, 0), behavior: 'smooth' });
         target.classList.add('flash');
         setTimeout(function () { target.classList.remove('flash'); }, 900);
       });
@@ -856,6 +862,8 @@
     });
 
     document.getElementById('equipment-detail-overlay').classList.add('show');
+    // 前回開いたときのスクロール位置が残らないよう、毎回先頭に戻す
+    document.getElementById('equipment-detail-scroll').scrollTop = 0;
   }
   function closeEquipmentCategoryDetail() {
     document.getElementById('equipment-detail-overlay').classList.remove('show');
