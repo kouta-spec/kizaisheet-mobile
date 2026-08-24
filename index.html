@@ -134,8 +134,10 @@
 
   #equipment-detail-sticky {
     position: sticky; top: -18px; z-index: 5; background: white;
-    margin: -18px -18px 0; padding: 18px 18px 0;
+    margin: -18px -18px 0; padding: 18px 18px 10px;
+    border-bottom: 1px solid var(--border);
   }
+  #equipment-detail-sticky .sheet-header { margin-bottom: 0; }
   .jump-row {
     display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 12px;
   }
@@ -357,9 +359,9 @@
         <button type="button" class="sheet-back-btn" id="equipment-detail-back">← 戻る</button>
         <h2 id="equipment-detail-title"></h2>
       </div>
-      <div class="hint" id="equipment-detail-summary"></div>
-      <div class="jump-row" id="equipment-detail-jump"></div>
     </div>
+    <div class="hint" id="equipment-detail-summary"></div>
+    <div class="jump-row" id="equipment-detail-jump"></div>
     <div id="equipment-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     <div class="sheet-actions">
       <button class="btn secondary" id="equipment-detail-close">閉じる</button>
@@ -1131,25 +1133,17 @@
   }
 
   // ---------- ガントチャート表示・更新 ----------
+  // マスターガントチャートのタブへ直接飛ぶURL（固定）。
+  // スプレッドシートのファイルID自体は変わらないため、通信不要でここに直接書いておく。
+  var GANTT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/19anYDwAFO_VJdrKJp0cGMuFKgcNhdG1pVNPCDJaNbsY/edit#gid=1048290200';
+
   function openGanttChart() {
-    var btn = document.getElementById('gantt-view-btn');
-    btn.disabled = true;
-    apiGet('ganttUrl').then(function (res) {
-      btn.disabled = false;
-      if (!res.ok) {
-        showBanner('ガントチャートのURL取得に失敗しました: ' + res.error, 'error');
-        return;
-      }
-      // 新しいタブで開くので、このアプリ自体の画面や操作位置はそのまま残る
-      window.open(res.url, '_blank');
-    }).catch(function (err) {
-      btn.disabled = false;
-      showBanner('通信エラー: ' + err.message, 'error');
-    });
+    // 新しいタブで開くので、このアプリ自体の画面や操作位置はそのまま残る
+    window.open(GANTT_SHEET_URL, '_blank');
   }
 
   function refreshGanttChart() {
-    var ok = window.confirm('ガントチャートを最新の内容に更新します。\n（機材件数が多いと数十秒かかることがあります）\nよろしいですか？');
+    var ok = window.confirm('ガントチャートを最新の内容に更新します。よろしいですか？');
     if (!ok) return;
     showLoading('ガントチャートを更新中...（機材件数が多いと時間がかかります）');
     apiPost({ action: 'refreshGantt' }).then(function (res) {
