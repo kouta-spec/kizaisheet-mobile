@@ -4,7 +4,7 @@
 // データそのもの（予約一覧など）は毎回ネットワークから取得する
 // （キャッシュを見せてしまうと古いデータに気づけなくなるため）。
 
-const CACHE_NAME = 'kizai-mobile-v1';
+const CACHE_NAME = 'kizai-mobile-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -45,7 +45,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // アプリ本体は「キャッシュがあればまずそれを返しつつ、裏で最新版に更新」する
+  // ページ本体（index.html）は「まずネットワークから最新版を取りに行き、取れなければキャッシュ」にする
+  // （こうしないと、コード更新後も古い画面がキャッシュから表示され続けてしまうため）
+  if (event.request.mode === 'navigate' || url.indexOf('index.html') !== -1) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // アイコンやmanifestなど、めったに変わらないファイルは「キャッシュがあればまずそれを返しつつ、裏で最新版に更新」する
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const fetchPromise = fetch(event.request)
