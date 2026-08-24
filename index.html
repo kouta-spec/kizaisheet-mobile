@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>機材シート2026 モバイル</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="theme-color" content="#1a73e8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  :root {
+    --blue: #1a73e8;
+    --blue-dark: #0f5bc4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #202124;
+    --sub: #5f6368;
+    --border: #e0e0e0;
+    --red: #d93025;
+    --orange: #f9ab00;
+    --green: #1e8e3e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--blue); color: white;
+    padding: calc(env(safe-area-inset-top) + 14px) 16px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header button.icon-btn {
+    background: none; border: none; color: white; font-size: 20px;
+    padding: 6px 8px; cursor: pointer;
+  }
+  .search-bar { padding: 10px 14px; background: var(--bg); }
+  .search-bar input {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    font-size: 15px; background: white;
+  }
+  #status-banner {
+    display: none; margin: 0 14px 10px; padding: 10px 12px; border-radius: 8px;
+    font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+  }
+  #status-banner.show { display: block; }
+  #status-banner.info { background: #e8f0fe; color: var(--blue-dark); }
+  #status-banner.error { background: #fce8e6; color: var(--red); }
+  #status-banner.warn { background: #fef7e0; color: #a35a00; }
+
+  #list { padding: 0 14px; display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    background: var(--card); border-radius: 12px; padding: 12px 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    border-left: 5px solid var(--blue);
+  }
+  .card.supplier { border-left-color: var(--orange); }
+  .card .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card .equipment { font-weight: 600; font-size: 15px; }
+  .card .price { font-size: 13px; color: var(--sub); white-space: nowrap; }
+  .card .project { font-size: 13px; color: var(--blue-dark); margin-top: 2px; }
+  .card .period { font-size: 13px; color: var(--sub); margin-top: 4px; }
+  .card .badges { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #eee; color: var(--sub);
+  }
+  .badge.supplier { background: #fef0d8; color: #a35a00; }
+  .badge.returned { background: #e6f4ea; color: var(--green); }
+
+  #empty { text-align: center; color: var(--sub); padding: 60px 20px; font-size: 14px; }
+
+  .fab {
+    position: fixed; right: 20px; bottom: calc(env(safe-area-inset-bottom) + 20px);
+    width: 56px; height: 56px; border-radius: 50%; background: var(--blue); color: white;
+    border: none; font-size: 28px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); cursor: pointer;
+    z-index: 20;
+  }
+
+  .sheet-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 30;
+  }
+  .sheet-overlay.show { display: block; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto;
+    background: white; border-radius: 16px 16px 0 0; padding: 18px 18px calc(env(safe-area-inset-bottom) + 18px);
+    max-height: 88vh; overflow-y: auto; z-index: 31;
+    transform: translateY(100%); transition: transform 0.2s ease-out;
+  }
+  .sheet-overlay.show .sheet { transform: translateY(0); }
+  .sheet h2 { margin: 0 0 14px; font-size: 17px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+    font-size: 15px; background: white;
+  }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1; }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .btn {
+    flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn.primary { background: var(--blue); color: white; }
+  .btn.secondary { background: #f1f3f4; color: var(--text); }
+  .btn:disabled { opacity: 0.5; }
+  .form-error { color: var(--red); font-size: 13px; margin-top: -6px; margin-bottom: 10px; display: none; }
+  .form-error.show { display: block; }
+
+  .settings-field { margin-bottom: 14px; }
+  .settings-field label { display: block; font-size: 13px; color: var(--sub); margin-bottom: 4px; }
+  .settings-field input {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px;
+  }
+  .hint { font-size: 12px; color: var(--sub); line-height: 1.6; margin-bottom: 16px; }
+
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #loading-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.7); z-index: 50;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+  }
+  #loading-overlay.show { display: flex; }
+  #loading-overlay .big-spinner {
+    width: 32px; height: 32px; border: 3px solid #ddd; border-top-color: var(--blue);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  #loading-overlay .loading-text { font-size: 13px; color: var(--sub); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>機材シート2026</h1>
+    <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
+  </header>
+
+  <div class="search-bar">
+    <input type="text" id="search-input" placeholder="機材名・作品名で検索">
+  </div>
+
+  <div id="status-banner"></div>
+  <div id="list"></div>
+  <div id="empty" style="display:none;">予約データがありません</div>
+
+  <button class="fab" id="add-fab" title="新しい予約を追加">＋</button>
+</div>
+
+<!-- 設定画面 -->
+<div class="sheet-overlay" id="settings-overlay">
+  <div class="sheet">
+    <h2>接続設定</h2>
+    <div class="hint">
+      Apps Scriptで発行した「ウェブアプリのURL」と、MOBILE_API_TOKENに設定した合言葉を入力してください。この情報はこのスマホの中だけに保存され、外部には送信されません。
+    </div>
+    <div class="settings-field">
+      <label>ウェブアプリのURL（.../exec）</label>
+      <input type="text" id="settings-url" placeholder="https://script.google.com/macros/s/.../exec">
+    </div>
+    <div class="settings-field">
+      <label>合言葉（トークン）</label>
+      <input type="text" id="settings-token" placeholder="MOBILE_API_TOKENに設定した文字列">
+    </div>
+    <div class="form-error" id="settings-error"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="settings-cancel">閉じる</button>
+      <button class="btn primary" id="settings-save">保存して接続</button>
+    </div>
+  </div>
+</div>
+
+<!-- 追加・編集フォーム -->
+<div class="sheet-overlay" id="form-overlay">
+  <div class="sheet">
+    <h2 id="form-title">予約を追加</h2>
+    <div class="field">
+      <label>作品名</label>
+      <input type="text" id="f-project">
+    </div>
+    <div class="field">
+      <label>機材名（マスターガントチャートの一覧から選択）</label>
+      <input type="text" id="f-equipment" list="equipment-list" autocomplete="off">
+      <datalist id="equipment-list"></datalist>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>数量</label>
+        <input type="number" id="f-quantity" min="1" placeholder="1">
+      </div>
+      <div class="field">
+        <label>発注先</label>
+        <input type="text" id="f-supplier" placeholder="セット機材以外の追加時のみ">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>開始日</label>
+        <input type="date" id="f-start">
+      </div>
+      <div class="field">
+        <label>終了日</label>
+        <input type="date" id="f-end">
+      </div>
+    </div>
+    <div class="field">
+      <label>備考</label>
+      <input type="text" id="f-note">
+    </div>
+    <div class="form-error" id="form-error"></div>
+    <div class="sheet-actions">
+      <button class="btn secondary" id="form-cancel">キャンセル</button>
+      <button class="btn primary" id="form-save">保存する</button>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay">
+  <div class="big-spinner"></div>
+  <div class="loading-text" id="loading-text">更新中...</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'kizai_mobile_settings_v1';
+  var settings = { url: '', token: '' };
+  var bookings = [];
+  var equipmentList = [];
+  var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
+
+  // ---------- 設定の読み書き ----------
+  function loadSettings() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) settings = JSON.parse(raw);
+    } catch (e) { /* 読み込めなければ初期値のまま */ }
+  }
+  function saveSettings() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) { /* 保存できなくても致命的ではない */ }
+  }
+  function hasSettings() {
+    return !!(settings.url && settings.token);
+  }
+
+  // ---------- API呼び出し ----------
+  function apiGet(action, extraParams) {
+    var url = settings.url + '?action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(settings.token);
+    if (extraParams) {
+      Object.keys(extraParams).forEach(function (k) {
+        url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(extraParams[k]);
+      });
+    }
+    return fetch(url).then(function (res) { return res.json(); });
+  }
+
+  function apiPost(body) {
+    body.token = settings.token;
+    // 【重要】Content-Typeをtext/plainにすることで、ブラウザのCORSプリフライトを回避する
+    // （Apps ScriptのWeb Appはプリフライト(OPTIONS)に対応していないため）
+    return fetch(settings.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    }).then(function (res) { return res.json(); });
+  }
+
+  // ---------- 画面表示ヘルパー ----------
+  function showBanner(message, type) {
+    var el = document.getElementById('status-banner');
+    el.textContent = message;
+    el.className = 'show ' + (type || 'info');
+  }
+  function hideBanner() {
+    document.getElementById('status-banner').className = '';
+  }
+  function showLoading(text) {
+    document.getElementById('loading-text').textContent = text || '更新中...';
+    document.getElementById('loading-overlay').classList.add('show');
+  }
+  function hideLoading() {
+    document.getElementById('loading-overlay').classList.remove('show');
+  }
+
+  // ---------- 一覧の描画 ----------
+  function renderList() {
+    var keyword = document.getElementById('search-input').value.trim().toLowerCase();
+    var listEl = document.getElementById('list');
+    var emptyEl = document.getElementById('empty');
+    listEl.innerHTML = '';
+
+    var filtered = bookings.filter(function (b) {
+      if (!keyword) return true;
+      return (b.equipment + ' ' + b.project).toLowerCase().indexOf(keyword) !== -1;
+    });
+
+    // 終了日が近い順に並べる（終了日不明のものは末尾）
+    filtered.sort(function (a, b) {
+      if (!a.endDate) return 1;
+      if (!b.endDate) return -1;
+      return a.endDate < b.endDate ? -1 : (a.endDate > b.endDate ? 1 : 0);
+    });
+
+    if (filtered.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    filtered.forEach(function (b) {
+      var card = document.createElement('div');
+      card.className = 'card' + (b.supplier ? ' supplier' : '');
+
+      var priceText = '';
+      if (b.price !== '' && b.price !== null && b.price !== undefined) {
+        priceText = String(b.price);
+      }
+
+      var badgesHtml = '';
+      if (b.supplier) badgesHtml += '<span class="badge supplier">発注先: ' + escapeHtml(b.supplier) + '</span>';
+      if (b.returnCheck === '返却済み') badgesHtml += '<span class="badge returned">返却済み</span>';
+
+      card.innerHTML =
+        '<div class="row1">' +
+          '<div class="equipment">' + escapeHtml(b.equipment) + '</div>' +
+          '<div class="price">' + escapeHtml(priceText) + '</div>' +
+        '</div>' +
+        '<div class="project">' + escapeHtml(b.project || '（作品名未入力）') + '</div>' +
+        '<div class="period">' + escapeHtml(b.startDate || '?') + ' 〜 ' + escapeHtml(b.endDate || '?') +
+          (b.quantity ? '　数量: ' + escapeHtml(String(b.quantity)) : '') + '</div>' +
+        (badgesHtml ? '<div class="badges">' + badgesHtml + '</div>' : '');
+
+      card.addEventListener('click', function () { openEditForm(b); });
+      listEl.appendChild(card);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ---------- データ取得 ----------
+  function refreshBookings() {
+    showLoading('読み込み中...');
+    return apiGet('bookings', { sinceDays: 30 }).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showBanner('データの取得に失敗しました: ' + res.error, 'error');
+        return;
+      }
+      hideBanner();
+      bookings = res.bookings;
+      renderList();
+    }).catch(function (err) {
+      hideLoading();
+      showBanner('通信エラー: ' + err.message, 'error');
+    });
+  }
+
+  function refreshEquipmentList() {
+    return apiGet('equipment').then(function (res) {
+      if (res.ok) {
+        equipmentList = res.equipment;
+        var dl = document.getElementById('equipment-list');
+        dl.innerHTML = '';
+        equipmentList.forEach(function (name) {
+          var opt = document.createElement('option');
+          opt.value = name;
+          dl.appendChild(opt);
+        });
+        try { localStorage.setItem('kizai_equipment_cache_v1', JSON.stringify(equipmentList)); } catch (e) {}
+      }
+    }).catch(function () { /* 機材一覧が取れなくても致命的ではない（前回キャッシュを使う） */ });
+  }
+
+  function loadCachedEquipmentList() {
+    try {
+      var raw = localStorage.getItem('kizai_equipment_cache_v1');
+      if (raw) {
+        equipmentList = JSON.parse(raw);
+        var dl = document.getElementById('equipment-list');
+        dl.innerHTML = '';
+        equipmentList.forEach(function (name) {
+          var opt = document.createElement('option');
+          opt.value = name;
+          dl.appendChild(opt);
+        });
+      }
+    } catch (e) { /* 無視 */ }
+  }
+
+  // ---------- 追加・編集フォーム ----------
+  function openAddForm() {
+    editingRow = null;
+    document.getElementById('form-title').textContent = '予約を追加';
+    document.getElementById('f-project').value = '';
+    document.getElementById('f-equipment').value = '';
+    document.getElementById('f-quantity').value = '';
+    document.getElementById('f-supplier').value = '';
+    document.getElementById('f-start').value = '';
+    document.getElementById('f-end').value = '';
+    document.getElementById('f-note').value = '';
+    hideFormError();
+    document.getElementById('form-overlay').classList.add('show');
+  }
+
+  function openEditForm(b) {
+    editingRow = b.row;
+    document.getElementById('form-title').textContent = '予約を編集（' + b.row + '行目）';
+    document.getElementById('f-project').value = b.project || '';
+    document.getElementById('f-equipment').value = b.equipment || '';
+    document.getElementById('f-quantity').value = b.quantity || '';
+    document.getElementById('f-supplier').value = b.supplier || '';
+    document.getElementById('f-start').value = toDateInputValue(b.startDate);
+    document.getElementById('f-end').value = toDateInputValue(b.endDate);
+    document.getElementById('f-note').value = b.note || '';
+    hideFormError();
+    document.getElementById('form-overlay').classList.add('show');
+  }
+
+  function toDateInputValue(yyyymmddSlash) {
+    if (!yyyymmddSlash) return '';
+    return yyyymmddSlash.replace(/\//g, '-');
+  }
+  function fromDateInputValue(yyyymmddDash) {
+    if (!yyyymmddDash) return '';
+    return yyyymmddDash.replace(/-/g, '/');
+  }
+
+  function closeForm() {
+    document.getElementById('form-overlay').classList.remove('show');
+  }
+  function showFormError(msg) {
+    var el = document.getElementById('form-error');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function hideFormError() {
+    document.getElementById('form-error').classList.remove('show');
+  }
+
+  function submitForm() {
+    var project = document.getElementById('f-project').value.trim();
+    var equipment = document.getElementById('f-equipment').value.trim();
+    var quantity = document.getElementById('f-quantity').value.trim();
+    var supplier = document.getElementById('f-supplier').value.trim();
+    var start = fromDateInputValue(document.getElementById('f-start').value);
+    var end = fromDateInputValue(document.getElementById('f-end').value);
+    var note = document.getElementById('f-note').value.trim();
+
+    hideFormError();
+    if (!project) { showFormError('作品名を入力してください'); return; }
+    if (!equipment) { showFormError('機材名を入力してください'); return; }
+    if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
+      showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
+      return;
+    }
+    if (!start || !end) { showFormError('開始日・終了日を入力してください'); return; }
+
+    var body = {
+      action: editingRow ? 'updateBooking' : 'addBooking',
+      project: project,
+      equipment: equipment,
+      quantity: quantity ? Number(quantity) : undefined,
+      supplier: supplier,
+      startDate: start,
+      endDate: end,
+      note: note
+    };
+    if (editingRow) body.row = editingRow;
+
+    showLoading(editingRow ? '更新中...（機材件数が多いと時間がかかります）' : '登録中...（機材件数が多いと時間がかかります）');
+    apiPost(body).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showFormError(res.error || '保存に失敗しました');
+        return;
+      }
+      closeForm();
+      if (res.overlap) {
+        showBanner(res.overlapMessage + '\n\n※期間重複のため、単価・予算の更新は行われていません。', 'warn');
+      } else if (res.warning) {
+        showBanner(res.warning, 'warn');
+      } else {
+        showBanner('保存しました。', 'info');
+        setTimeout(hideBanner, 4000);
+      }
+      refreshBookings();
+    }).catch(function (err) {
+      hideLoading();
+      showFormError('通信エラー: ' + err.message);
+    });
+  }
+
+  // ---------- 設定画面 ----------
+  function openSettings() {
+    document.getElementById('settings-url').value = settings.url;
+    document.getElementById('settings-token').value = settings.token;
+    document.getElementById('settings-error').classList.remove('show');
+    document.getElementById('settings-overlay').classList.add('show');
+  }
+  function closeSettings() {
+    if (!hasSettings()) return; // 未設定の状態では閉じさせない（データが読み込めないため）
+    document.getElementById('settings-overlay').classList.remove('show');
+  }
+  function saveSettingsAndConnect() {
+    var url = document.getElementById('settings-url').value.trim();
+    var token = document.getElementById('settings-token').value.trim();
+    var errEl = document.getElementById('settings-error');
+    if (!url || !token) {
+      errEl.textContent = 'URLと合言葉の両方を入力してください';
+      errEl.classList.add('show');
+      return;
+    }
+    settings = { url: url, token: token };
+    saveSettings();
+    document.getElementById('settings-overlay').classList.remove('show');
+    initialLoad();
+  }
+
+  // ---------- 初期化 ----------
+  function initialLoad() {
+    loadCachedEquipmentList();
+    refreshEquipmentList();
+    refreshBookings();
+  }
+
+  document.getElementById('settings-btn').addEventListener('click', openSettings);
+  document.getElementById('settings-cancel').addEventListener('click', closeSettings);
+  document.getElementById('settings-save').addEventListener('click', saveSettingsAndConnect);
+  document.getElementById('add-fab').addEventListener('click', openAddForm);
+  document.getElementById('form-cancel').addEventListener('click', closeForm);
+  document.getElementById('form-save').addEventListener('click', submitForm);
+  document.getElementById('search-input').addEventListener('input', renderList);
+
+  loadSettings();
+  if (hasSettings()) {
+    initialLoad();
+  } else {
+    openSettings();
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').catch(function () { /* 登録失敗しても致命的ではない */ });
+    });
+  }
+})();
+</script>
+</body>
+</html>
