@@ -234,6 +234,10 @@
       <input type="text" id="f-project">
     </div>
     <div class="field">
+      <label>カテゴリで絞り込む（任意）</label>
+      <select id="f-category"><option value="">すべて表示</option></select>
+    </div>
+    <div class="field">
       <label>機材名（マスターガントチャートの一覧から選択）</label>
       <input type="text" id="f-equipment" list="equipment-list" autocomplete="off">
       <datalist id="equipment-list"></datalist>
@@ -295,6 +299,8 @@
   var settings = { url: '', token: '' };
   var bookings = [];
   var equipmentList = [];
+  var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
+  var categoryOrder = [];
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
   var currentView = 'bookings'; // 'bookings' または 'equipment'
 
@@ -690,17 +696,81 @@
     } catch (e) { /* 無視 */ }
   }
 
+  // ---------- カテゴリ別の機材一覧（予約フォームの絞り込み用） ----------
+  function refreshEquipmentCategories() {
+    return apiGet('equipmentByCategory').then(function (res) {
+      if (res.ok) {
+        setEquipmentCategories(res.categories);
+        try { localStorage.setItem('kizai_category_cache_v1', JSON.stringify(res.categories)); } catch (e) {}
+      }
+    }).catch(function () { /* 取得できなくても致命的ではない（前回キャッシュを使う） */ });
+  }
+
+  function loadCachedEquipmentCategories() {
+    try {
+      var raw = localStorage.getItem('kizai_category_cache_v1');
+      if (raw) setEquipmentCategories(JSON.parse(raw));
+    } catch (e) { /* 無視 */ }
+  }
+
+  function setEquipmentCategories(categories) {
+    equipmentByCategory = {};
+    categoryOrder = [];
+    (categories || []).forEach(function (c) {
+      equipmentByCategory[c.category] = c.items;
+      categoryOrder.push(c.category);
+    });
+    populateCategorySelect();
+  }
+
+  function populateCategorySelect() {
+    var sel = document.getElementById('f-category');
+    var current = sel.value;
+    sel.innerHTML = '<option value="">すべて表示</option>';
+    categoryOrder.forEach(function (cat) {
+      var opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat + '（' + equipmentByCategory[cat].length + '）';
+      sel.appendChild(opt);
+    });
+    if (current && categoryOrder.indexOf(current) !== -1) sel.value = current;
+  }
+
+  // 選んだカテゴリに応じて、機材名の候補（datalist）を絞り込む
+  function updateEquipmentDatalist(filterCategory) {
+    var dl = document.getElementById('equipment-list');
+    dl.innerHTML = '';
+    var names = (filterCategory && equipmentByCategory[filterCategory])
+      ? equipmentByCategory[filterCategory]
+      : equipmentList;
+    names.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      dl.appendChild(opt);
+    });
+  }
+
+  function findCategoryForEquipment(name) {
+    for (var i = 0; i < categoryOrder.length; i++) {
+      var cat = categoryOrder[i];
+      if (equipmentByCategory[cat].indexOf(name) !== -1) return cat;
+    }
+    return '';
+  }
+
   // ---------- 追加・編集フォーム ----------
   function openAddForm() {
     editingRow = null;
     document.getElementById('form-title').textContent = '予約を追加';
     document.getElementById('f-project').value = '';
+    document.getElementById('f-category').value = '';
     document.getElementById('f-equipment').value = '';
     document.getElementById('f-quantity').value = '';
     document.getElementById('f-supplier').value = '';
     document.getElementById('f-start').value = '';
     document.getElementById('f-end').value = '';
     document.getElementById('f-note').value = '';
+    updateEquipmentDatalist('');
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -709,6 +779,9 @@
     editingRow = b.row;
     document.getElementById('form-title').textContent = '予約を編集（' + b.row + '行目）';
     document.getElementById('f-project').value = b.project || '';
+    var cat = findCategoryForEquipment(b.equipment);
+    document.getElementById('f-category').value = cat;
+    updateEquipmentDatalist(cat);
     document.getElementById('f-equipment').value = b.equipment || '';
     document.getElementById('f-quantity').value = b.quantity || '';
     document.getElementById('f-supplier').value = b.supplier || '';
@@ -822,7 +895,9 @@
   // ---------- 初期化 ----------
   function initialLoad() {
     loadCachedEquipmentList();
+    loadCachedEquipmentCategories();
     refreshEquipmentList();
+    refreshEquipmentCategories();
     refreshBookings();
   }
 
@@ -833,6 +908,10 @@
   document.getElementById('form-cancel').addEventListener('click', closeForm);
   document.getElementById('form-save').addEventListener('click', submitForm);
   document.getElementById('project-detail-close').addEventListener('click', closeProjectDetail);
+  document.getElementById('f-category').addEventListener('change', function () {
+    updateEquipmentDatalist(this.value);
+    document.getElementById('f-equipment').value = '';
+  });
   document.getElementById('search-input').addEventListener('input', renderCurrentView);
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
