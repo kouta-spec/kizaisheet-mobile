@@ -645,12 +645,7 @@
     var byEquipment = built.byEquipment;
     var allNames = built.allNames;
 
-    var totals = countByStatus(allNames, byEquipment);
-    summaryEl.innerHTML =
-      '全' + allNames.length + '件　' +
-      '<span>🔴 使用中: <b>' + totals.inuse + '</b></span>' +
-      '<span>🟡 予約あり: <b>' + totals.upcoming + '</b></span>' +
-      '<span>🟢 空き: <b>' + totals.free + '</b></span>';
+    summaryEl.innerHTML = '全' + allNames.length + '件';
     summaryEl.style.display = 'flex';
 
     // カテゴリごとにグループ化（カテゴリ情報が未取得ならまとめて1グループ）
@@ -682,12 +677,10 @@
 
     visibleGroups.forEach(function (cat) {
       var names = namesByGroup[cat];
-      var counts = countByStatus(names, byEquipment);
       var header = document.createElement('div');
       header.className = 'group-header';
       header.innerHTML =
-        '<span>' + escapeHtml(cat) + '（' + names.length + '件）　🔴' + counts.inuse +
-          ' 🟡' + counts.upcoming + ' 🟢' + counts.free + '</span>' +
+        '<span>' + escapeHtml(cat) + '（' + names.length + '件）</span>' +
         '<span class="chevron">詳細 ›</span>';
       header.addEventListener('click', function () { openEquipmentCategoryDetail(cat, names, byEquipment); });
       listEl.appendChild(header);
@@ -823,9 +816,8 @@
       return a.localeCompare(b, 'ja');
     });
 
-    var counts = countByStatus(sortedNames, byEquipment);
     document.getElementById('equipment-detail-summary').textContent =
-      sortedNames.length + '件の機材　🔴使用中' + counts.inuse + '　🟡予約あり' + counts.upcoming + '　🟢空き' + counts.free;
+      sortedNames.length + '件の機材';
 
     var listEl = document.getElementById('equipment-detail-list');
     var jumpEl = document.getElementById('equipment-detail-jump');
