@@ -92,35 +92,23 @@
   .group-header:first-child { margin-top: 0; }
   .group-header .chevron { color: var(--blue-dark); font-size: 14px; }
 
-  .mini-timeline { display: flex; gap: 2px; margin-top: 8px; }
-  .tl-cell { flex: 1; height: 14px; border-radius: 2px; background: #e6e6e6; }
-  .tl-cell.booked { background: var(--red); }
-  .tl-cell.today { box-shadow: 0 0 0 1.5px var(--blue) inset; }
-  .tl-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--sub); margin-top: 3px; }
-
-  .cal-open-btn {
-    margin-top: 8px; width: 100%; padding: 7px; border-radius: 8px; border: 1px solid var(--border);
-    background: white; color: var(--blue-dark); font-size: 12px; font-weight: 600; cursor: pointer;
+  .mini-cal { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .mini-cal-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .mini-cal-nav button {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+    background: #f1f3f4; font-size: 13px; cursor: pointer; line-height: 1;
   }
-
-  .cal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-  .cal-nav button { flex: 0 0 auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: #f1f3f4; font-size: 13px; cursor: pointer; }
-  .cal-nav button:disabled { opacity: 0.35; cursor: default; }
-  .cal-nav .cal-month-label { flex: 1; text-align: center; font-weight: 700; font-size: 15px; }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .cal-weekday { text-align: center; font-size: 11px; color: var(--sub); padding-bottom: 4px; }
-  .cal-cell {
+  .mini-cal-nav button:disabled { opacity: 0.3; cursor: default; }
+  .mc-label { flex: 1; text-align: center; font-size: 12px; font-weight: 700; color: var(--sub); }
+  .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .mc-weekday { text-align: center; font-size: 9px; color: var(--sub); padding-bottom: 2px; }
+  .mc-cell {
     aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
-    border-radius: 8px; font-size: 13px; background: #f1f3f4; color: var(--text);
+    border-radius: 5px; font-size: 10px; background: #f1f3f4; color: var(--text);
   }
-  .cal-cell.other-month { background: transparent; }
-  .cal-cell.booked { background: var(--red); color: white; font-weight: 600; }
-  .cal-cell.today { box-shadow: 0 0 0 2px var(--blue) inset; font-weight: 700; }
-  .cal-legend { display: flex; gap: 14px; font-size: 12px; color: var(--sub); margin-top: 14px; }
-  .cal-legend span { display: flex; align-items: center; gap: 5px; }
-  .cal-legend .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-  .cal-legend .dot.booked { background: var(--red); }
-  .cal-legend .dot.free { background: #f1f3f4; border: 1px solid var(--border); }
+  .mc-cell.mc-other { background: transparent; }
+  .mc-cell.mc-booked { background: var(--red); color: white; font-weight: 600; }
+  .mc-cell.mc-today { box-shadow: 0 0 0 1.5px var(--blue) inset; font-weight: 700; }
 
   .card.status-inuse { border-left-color: var(--red); }
   .card.status-upcoming { border-left-color: var(--orange); }
@@ -151,13 +139,20 @@
   }
   .sheet-overlay.show { display: block; }
   .sheet {
-    position: fixed; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto;
-    background: white; border-radius: 16px 16px 0 0; padding: 18px 18px calc(env(safe-area-inset-bottom) + 18px);
-    max-height: 88vh; overflow-y: auto; z-index: 31;
-    transform: translateY(100%); transition: transform 0.2s ease-out;
+    position: fixed; top: 50%; left: 50%; width: calc(100% - 32px); max-width: 520px;
+    background: white; border-radius: 16px; padding: 18px;
+    max-height: 85vh; overflow-y: auto; z-index: 31;
+    transform: translate(-50%, -50%) scale(0.95); opacity: 0;
+    transition: transform 0.15s ease-out, opacity 0.15s ease-out;
   }
-  .sheet-overlay.show .sheet { transform: translateY(0); }
+  .sheet-overlay.show .sheet { transform: translate(-50%, -50%) scale(1); opacity: 1; }
   .sheet h2 { margin: 0 0 14px; font-size: 17px; }
+  .sheet-header { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  .sheet-header h2 { margin: 0; flex: 1; }
+  .sheet-back-btn {
+    background: none; border: none; color: var(--blue-dark); font-size: 24px; line-height: 1;
+    padding: 2px 8px 2px 0; cursor: pointer; flex: 0 0 auto;
+  }
   .field { margin-bottom: 14px; }
   .field label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
   .field input, .field select {
@@ -176,6 +171,10 @@
   .btn:disabled { opacity: 0.5; }
   .form-error { color: var(--red); font-size: 13px; margin-top: -6px; margin-bottom: 10px; display: none; }
   .form-error.show { display: block; }
+  .btn-delete {
+    width: 100%; margin-top: 10px; padding: 11px; border-radius: 10px; border: 1px solid var(--red);
+    background: white; color: var(--red); font-size: 14px; font-weight: 600; cursor: pointer;
+  }
 
   .settings-field { margin-bottom: 14px; }
   .settings-field label { display: block; font-size: 13px; color: var(--sub); margin-bottom: 4px; }
@@ -229,7 +228,10 @@
 <!-- 設定画面 -->
 <div class="sheet-overlay" id="settings-overlay">
   <div class="sheet">
-    <h2>接続設定</h2>
+    <div class="sheet-header">
+      <button type="button" class="sheet-back-btn" id="settings-back">‹</button>
+      <h2>接続設定</h2>
+    </div>
     <div class="hint">
       Apps Scriptで発行した「ウェブアプリのURL」と、MOBILE_API_TOKENに設定した合言葉を入力してください。この情報はこのスマホの中だけに保存され、外部には送信されません。
     </div>
@@ -252,7 +254,10 @@
 <!-- 追加・編集フォーム -->
 <div class="sheet-overlay" id="form-overlay">
   <div class="sheet">
-    <h2 id="form-title">予約を追加</h2>
+    <div class="sheet-header">
+      <button type="button" class="sheet-back-btn" id="form-back">‹</button>
+      <h2 id="form-title">予約を追加</h2>
+    </div>
     <div class="field">
       <label>作品名</label>
       <input type="text" id="f-project">
@@ -295,13 +300,17 @@
       <button class="btn secondary" id="form-cancel">キャンセル</button>
       <button class="btn primary" id="form-save">保存する</button>
     </div>
+    <button type="button" class="btn-delete" id="form-delete" style="display:none;">この予約を削除する</button>
   </div>
 </div>
 
 <!-- 作品の詳細（グループ見出しをタップすると表示） -->
 <div class="sheet-overlay" id="project-detail-overlay">
   <div class="sheet">
-    <h2 id="project-detail-title"></h2>
+    <div class="sheet-header">
+      <button type="button" class="sheet-back-btn" id="project-detail-back">‹</button>
+      <h2 id="project-detail-title"></h2>
+    </div>
     <div class="hint" id="project-detail-summary"></div>
     <div id="project-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     <div class="sheet-actions">
@@ -313,31 +322,14 @@
 <!-- 機材の状況：カテゴリの詳細（グループ見出しをタップすると表示） -->
 <div class="sheet-overlay" id="equipment-detail-overlay">
   <div class="sheet">
-    <h2 id="equipment-detail-title"></h2>
+    <div class="sheet-header">
+      <button type="button" class="sheet-back-btn" id="equipment-detail-back">‹</button>
+      <h2 id="equipment-detail-title"></h2>
+    </div>
     <div class="hint" id="equipment-detail-summary"></div>
     <div id="equipment-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     <div class="sheet-actions">
       <button class="btn secondary" id="equipment-detail-close">閉じる</button>
-    </div>
-  </div>
-</div>
-
-<!-- 機材ごとの月間カレンダー -->
-<div class="sheet-overlay" id="calendar-overlay">
-  <div class="sheet">
-    <h2 id="calendar-title"></h2>
-    <div class="cal-nav">
-      <button type="button" id="cal-prev">‹ 前の月</button>
-      <div class="cal-month-label" id="cal-month-label"></div>
-      <button type="button" id="cal-next">次の月 ›</button>
-    </div>
-    <div class="cal-grid" id="cal-grid"></div>
-    <div class="cal-legend">
-      <span><span class="dot booked"></span>予約あり</span>
-      <span><span class="dot free"></span>空き</span>
-    </div>
-    <div class="sheet-actions">
-      <button class="btn secondary" id="calendar-close">閉じる</button>
     </div>
   </div>
 </div>
@@ -440,35 +432,6 @@
     var m = String(d.getMonth() + 1).padStart(2, '0');
     var day = String(d.getDate()).padStart(2, '0');
     return d.getFullYear() + '/' + m + '/' + day;
-  }
-
-  var TIMELINE_DAYS = 14;
-
-  function buildTimelineDates() {
-    var dates = [];
-    var base = new Date();
-    base.setHours(0, 0, 0, 0);
-    for (var i = 0; i < TIMELINE_DAYS; i++) {
-      var d = new Date(base);
-      d.setDate(base.getDate() + i);
-      dates.push(formatDateStr(d));
-    }
-    return dates;
-  }
-
-  // 直近14日間を「予約あり／空き」の帯で見せる、簡易ガントチャート
-  function buildMiniTimelineHtml(entry, timelineDates) {
-    var allBookings = entry.current.concat(entry.upcoming);
-    var cells = timelineDates.map(function (dateStr, idx) {
-      var booked = allBookings.some(function (b) { return b.startDate <= dateStr && dateStr <= b.endDate; });
-      var cls = 'tl-cell ' + (booked ? 'booked' : 'free') + (idx === 0 ? ' today' : '');
-      return '<div class="' + cls + '"></div>';
-    }).join('');
-    var lastDate = timelineDates[timelineDates.length - 1];
-    return (
-      '<div class="mini-timeline">' + cells + '</div>' +
-      '<div class="tl-labels"><span>今日 ' + escapeHtml(timelineDates[0]) + '</span><span>' + escapeHtml(lastDate) + '</span></div>'
-    );
   }
 
   // ---------- 予約一覧（作品ごとにグループ表示） ----------
@@ -696,7 +659,7 @@
     });
   }
 
-  function buildEquipmentStatusCard(name, entry, timelineDates) {
+  function buildEquipmentStatusCard(name, entry) {
     entry.upcoming.sort(function (a, b) {
       return a.startDate < b.startDate ? -1 : (a.startDate > b.startDate ? 1 : 0);
     });
@@ -728,13 +691,16 @@
         badgeHtml +
       '</div>' +
       '<div class="period">' + detailHtml + '</div>' +
-      buildMiniTimelineHtml(entry, timelineDates) +
-      '<button type="button" class="cal-open-btn">📅 カレンダーで全期間を確認</button>';
+      '<div class="mini-cal">' +
+        '<div class="mini-cal-nav">' +
+          '<button type="button" class="mc-prev">‹</button>' +
+          '<span class="mc-label"></span>' +
+          '<button type="button" class="mc-next">›</button>' +
+        '</div>' +
+        '<div class="mini-cal-grid"></div>' +
+      '</div>';
 
-    card.querySelector('.cal-open-btn').addEventListener('click', function (e) {
-      e.stopPropagation();
-      openEquipmentCalendar(name);
-    });
+    attachInlineCalendar(card, entry);
 
     card.addEventListener('click', function () {
       closeEquipmentCategoryDetail();
@@ -744,62 +710,64 @@
     return card;
   }
 
-  // ---------- 機材ごとの月間カレンダー（今月以降を自由に閲覧できる） ----------
-  var calendarEquipmentName = null;
-  var calendarYear, calendarMonth; // calendarMonthは0始まり
-
-  function getBookingsForEquipment(name) {
-    return bookings.filter(function (b) { return b.equipment === name && b.startDate && b.endDate; });
-  }
-
-  function openEquipmentCalendar(name) {
-    calendarEquipmentName = name;
+  // カードの中に、その機材専用の月間カレンダーを組み込む（今月以降を自由に閲覧できる。
+  // 通信量の都合上、今月より前へは戻れない）
+  function attachInlineCalendar(card, entry) {
+    var itemBookings = entry.current.concat(entry.upcoming);
     var now = new Date();
-    calendarYear = now.getFullYear();
-    calendarMonth = now.getMonth();
-    renderCalendar();
-    document.getElementById('calendar-overlay').classList.add('show');
-  }
-  function closeEquipmentCalendar() {
-    document.getElementById('calendar-overlay').classList.remove('show');
-  }
+    var year = now.getFullYear();
+    var month = now.getMonth();
 
-  function renderCalendar() {
-    document.getElementById('calendar-title').textContent = calendarEquipmentName;
-    document.getElementById('cal-month-label').textContent = calendarYear + '年' + (calendarMonth + 1) + '月';
+    var labelEl = card.querySelector('.mc-label');
+    var gridEl = card.querySelector('.mini-cal-grid');
+    var prevBtn = card.querySelector('.mc-prev');
+    var nextBtn = card.querySelector('.mc-next');
 
-    var now = new Date();
-    var isCurrentMonth = (calendarYear === now.getFullYear() && calendarMonth === now.getMonth());
-    document.getElementById('cal-prev').disabled = isCurrentMonth; // 通信量の都合上、今月より前へは戻れない
+    function renderMonth() {
+      labelEl.textContent = year + '年' + (month + 1) + '月';
+      var isCurrentMonth = (year === now.getFullYear() && month === now.getMonth());
+      prevBtn.disabled = isCurrentMonth;
 
-    var itemBookings = getBookingsForEquipment(calendarEquipmentName);
-    var todayStrVal = todayStr();
+      var todayStrVal = todayStr();
+      var firstOfMonth = new Date(year, month, 1);
+      var startWeekday = firstOfMonth.getDay();
+      var daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    var firstOfMonth = new Date(calendarYear, calendarMonth, 1);
-    var startWeekday = firstOfMonth.getDay();
-    var daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+      gridEl.innerHTML = '';
+      ['日', '月', '火', '水', '木', '金', '土'].forEach(function (w) {
+        var el = document.createElement('div');
+        el.className = 'mc-weekday';
+        el.textContent = w;
+        gridEl.appendChild(el);
+      });
+      for (var i = 0; i < startWeekday; i++) {
+        var pad = document.createElement('div');
+        pad.className = 'mc-cell mc-other';
+        gridEl.appendChild(pad);
+      }
+      for (var day = 1; day <= daysInMonth; day++) {
+        var dStr = formatDateStr(new Date(year, month, day));
+        var booked = itemBookings.some(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
+        var cell = document.createElement('div');
+        cell.className = 'mc-cell' + (booked ? ' mc-booked' : '') + (dStr === todayStrVal ? ' mc-today' : '');
+        cell.textContent = String(day);
+        gridEl.appendChild(cell);
+      }
+    }
 
-    var gridEl = document.getElementById('cal-grid');
-    gridEl.innerHTML = '';
-    ['日', '月', '火', '水', '木', '金', '土'].forEach(function (w) {
-      var el = document.createElement('div');
-      el.className = 'cal-weekday';
-      el.textContent = w;
-      gridEl.appendChild(el);
+    prevBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (prevBtn.disabled) return;
+      month--; if (month < 0) { month = 11; year--; }
+      renderMonth();
     });
-    for (var i = 0; i < startWeekday; i++) {
-      var pad = document.createElement('div');
-      pad.className = 'cal-cell other-month';
-      gridEl.appendChild(pad);
-    }
-    for (var day = 1; day <= daysInMonth; day++) {
-      var dStr = formatDateStr(new Date(calendarYear, calendarMonth, day));
-      var booked = itemBookings.some(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
-      var cell = document.createElement('div');
-      cell.className = 'cal-cell' + (booked ? ' booked' : '') + (dStr === todayStrVal ? ' today' : '');
-      cell.textContent = String(day);
-      gridEl.appendChild(cell);
-    }
+    nextBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      month++; if (month > 11) { month = 0; year++; }
+      renderMonth();
+    });
+
+    renderMonth();
   }
 
   // ---------- 機材の状況：カテゴリの詳細シート ----------
@@ -819,10 +787,9 @@
 
     var listEl = document.getElementById('equipment-detail-list');
     listEl.innerHTML = '';
-    var timelineDates = buildTimelineDates();
     sortedNames.forEach(function (name) {
       var entry = byEquipment[name] || { current: [], upcoming: [] };
-      listEl.appendChild(buildEquipmentStatusCard(name, entry, timelineDates));
+      listEl.appendChild(buildEquipmentStatusCard(name, entry));
     });
 
     document.getElementById('equipment-detail-overlay').classList.add('show');
@@ -963,6 +930,7 @@
     document.getElementById('f-end').value = '';
     document.getElementById('f-note').value = '';
     updateEquipmentDatalist('');
+    document.getElementById('form-delete').style.display = 'none';
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -980,6 +948,7 @@
     document.getElementById('f-start').value = toDateInputValue(b.startDate);
     document.getElementById('f-end').value = toDateInputValue(b.endDate);
     document.getElementById('f-note').value = b.note || '';
+    document.getElementById('form-delete').style.display = 'block';
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -1058,6 +1027,34 @@
     });
   }
 
+  function deleteCurrentBooking() {
+    if (!editingRow) return;
+    var ok = window.confirm('この予約を削除します。よろしいですか？\n（この操作は取り消せません）');
+    if (!ok) return;
+
+    showLoading('削除中...（機材件数が多いと時間がかかります）');
+    apiPost({ action: 'deleteBooking', row: editingRow }).then(function (res) {
+      hideLoading();
+      if (!res.ok) {
+        showFormError(res.error || '削除に失敗しました');
+        return;
+      }
+      closeForm();
+      if (res.overlap) {
+        showBanner(res.overlapMessage + '\n\n※期間重複のため、単価・予算の更新は行われていません。', 'warn');
+      } else if (res.warning) {
+        showBanner(res.warning, 'warn');
+      } else {
+        showBanner('予約を削除しました。', 'info');
+        setTimeout(hideBanner, 4000);
+      }
+      refreshBookings();
+    }).catch(function (err) {
+      hideLoading();
+      showFormError('通信エラー: ' + err.message);
+    });
+  }
+
   // ---------- 設定画面 ----------
   function openSettings() {
     document.getElementById('settings-url').value = settings.url;
@@ -1099,20 +1096,13 @@
   document.getElementById('add-fab').addEventListener('click', openAddForm);
   document.getElementById('form-cancel').addEventListener('click', closeForm);
   document.getElementById('form-save').addEventListener('click', submitForm);
+  document.getElementById('form-delete').addEventListener('click', deleteCurrentBooking);
   document.getElementById('project-detail-close').addEventListener('click', closeProjectDetail);
   document.getElementById('equipment-detail-close').addEventListener('click', closeEquipmentCategoryDetail);
-  document.getElementById('calendar-close').addEventListener('click', closeEquipmentCalendar);
-  document.getElementById('cal-prev').addEventListener('click', function () {
-    if (this.disabled) return;
-    calendarMonth--;
-    if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
-    renderCalendar();
-  });
-  document.getElementById('cal-next').addEventListener('click', function () {
-    calendarMonth++;
-    if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
-    renderCalendar();
-  });
+  document.getElementById('settings-back').addEventListener('click', closeSettings);
+  document.getElementById('form-back').addEventListener('click', closeForm);
+  document.getElementById('project-detail-back').addEventListener('click', closeProjectDetail);
+  document.getElementById('equipment-detail-back').addEventListener('click', closeEquipmentCategoryDetail);
   document.getElementById('f-category').addEventListener('change', function () {
     updateEquipmentDatalist(this.value);
     document.getElementById('f-equipment').value = '';
