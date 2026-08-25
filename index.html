@@ -69,7 +69,7 @@
     background: #ecebff; color: var(--blue-dark); font-size: 12.5px; font-weight: 700; cursor: pointer;
     display: flex; align-items: center; justify-content: center; gap: 5px;
   }
-  .gantt-actions button:nth-child(2) { background: #ffe9f1; color: #c23367; }
+  #gantt-refresh-btn { background: #ffe9f1; color: #c23367; }
   .gantt-actions button:disabled { opacity: 0.5; }
   #status-banner {
     display: none; margin: 0 14px 10px; padding: 10px 12px; border-radius: 12px;
@@ -260,7 +260,6 @@
   </div>
 
   <div class="gantt-actions">
-    <button type="button" id="gantt-view-btn">📊 ガントチャート表示</button>
     <button type="button" id="gantt-refresh-btn">🔄 ガントチャートを更新</button>
   </div>
 
@@ -315,8 +314,7 @@
     </div>
     <div class="field">
       <label>機材名（マスターガントチャートの一覧から選択）</label>
-      <input type="text" id="f-equipment" list="equipment-list" autocomplete="off">
-      <datalist id="equipment-list"></datalist>
+      <select id="f-equipment"><option value="">（機材を選択）</option></select>
     </div>
     <div class="field-row">
       <div class="field">
@@ -325,7 +323,7 @@
       </div>
       <div class="field">
         <label>発注先</label>
-        <input type="text" id="f-supplier" placeholder="セット機材以外の追加時のみ">
+        <select id="f-supplier"><option value="">（自社在庫・セット機材）</option></select>
       </div>
     </div>
     <div class="field-row">
@@ -399,6 +397,7 @@
   var equipmentList = [];
   var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
   var categoryOrder = [];
+  var supplierList = []; // 発注先の候補（機材リストF列のプルダウンに設定されているレンタル会社名）
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
   var currentView = 'bookings'; // 'bookings' または 'equipment'
 
@@ -923,13 +922,6 @@
     return apiGet('equipment').then(function (res) {
       if (res.ok) {
         equipmentList = res.equipment;
-        var dl = document.getElementById('equipment-list');
-        dl.innerHTML = '';
-        equipmentList.forEach(function (name) {
-          var opt = document.createElement('option');
-          opt.value = name;
-          dl.appendChild(opt);
-        });
         try { localStorage.setItem('kizai_equipment_cache_v1', JSON.stringify(equipmentList)); } catch (e) {}
         renderCurrentView();
       }
@@ -939,16 +931,7 @@
   function loadCachedEquipmentList() {
     try {
       var raw = localStorage.getItem('kizai_equipment_cache_v1');
-      if (raw) {
-        equipmentList = JSON.parse(raw);
-        var dl = document.getElementById('equipment-list');
-        dl.innerHTML = '';
-        equipmentList.forEach(function (name) {
-          var opt = document.createElement('option');
-          opt.value = name;
-          dl.appendChild(opt);
-        });
-      }
+      if (raw) equipmentList = JSON.parse(raw);
     } catch (e) { /* 無視 */ }
   }
 
@@ -967,6 +950,50 @@
       var raw = localStorage.getItem('kizai_category_cache_v1');
       if (raw) setEquipmentCategories(JSON.parse(raw));
     } catch (e) { /* 無視 */ }
+  }
+
+  // ---------- 発注先の一覧（予約フォームのプルダウン用） ----------
+  // 機材リストのF列（発注先）に設定されているプルダウン（データ入力規則）の
+  // 選択肢をそのまま使う。手入力だと表記ゆれが起きやすいため。
+  function refreshSupplierList() {
+    return apiGet('supplierList').then(function (res) {
+      if (res.ok) {
+        supplierList = res.suppliers;
+        try { localStorage.setItem('kizai_mobile_supplier_cache_v1', JSON.stringify(supplierList)); } catch (e) {}
+      }
+    }).catch(function () { /* 取得できなくても致命的ではない（前回キャッシュを使う） */ });
+  }
+
+  function loadCachedSupplierList() {
+    try {
+      var raw = localStorage.getItem('kizai_mobile_supplier_cache_v1');
+      if (raw) supplierList = JSON.parse(raw);
+    } catch (e) { /* 無視 */ }
+  }
+
+  function populateSupplierSelect(selectedValue) {
+    var sel = document.getElementById('f-supplier');
+    var current = selectedValue !== undefined ? selectedValue : sel.value;
+    sel.innerHTML = '';
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '（自社在庫・セット機材）';
+    sel.appendChild(placeholder);
+    supplierList.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    // 現在の値が一覧に無い（表記ゆれのある既存データを編集で開いた場合など）場合も、
+    // 選び直させて消してしまわないよう、そのまま選べる選択肢として残す。
+    if (current && supplierList.indexOf(current) === -1) {
+      var extra = document.createElement('option');
+      extra.value = current;
+      extra.textContent = current;
+      sel.appendChild(extra);
+    }
+    sel.value = current || '';
   }
 
   // 前回表示した予約データのキャッシュを、通信より先に画面へ出す。
@@ -1005,18 +1032,35 @@
     if (current && categoryOrder.indexOf(current) !== -1) sel.value = current;
   }
 
-  // 選んだカテゴリに応じて、機材名の候補（datalist）を絞り込む
-  function updateEquipmentDatalist(filterCategory) {
-    var dl = document.getElementById('equipment-list');
-    dl.innerHTML = '';
+  // 選んだカテゴリに応じて、機材名のプルダウンの選択肢を絞り込む。
+  // 手入力ではなく選択式にすることで、機材名の入力ミス（表記ゆれ）を防ぐ。
+  function populateEquipmentSelect(filterCategory, selectedValue) {
+    var sel = document.getElementById('f-equipment');
+    var current = selectedValue !== undefined ? selectedValue : sel.value;
+    sel.innerHTML = '';
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '（機材を選択）';
+    sel.appendChild(placeholder);
     var names = (filterCategory && equipmentByCategory[filterCategory])
       ? equipmentByCategory[filterCategory]
       : equipmentList;
     names.forEach(function (name) {
       var opt = document.createElement('option');
       opt.value = name;
-      dl.appendChild(opt);
+      opt.textContent = name;
+      sel.appendChild(opt);
     });
+    // 現在の値が絞り込み後の候補に無い場合（表記ゆれ等でマスターガントチャートと
+    // 一致しない既存データを編集で開いたときなど）も、勝手に空欄へ変えてしまわず
+    // そのまま選べる選択肢として残しておく。
+    if (current && names.indexOf(current) === -1) {
+      var extra = document.createElement('option');
+      extra.value = current;
+      extra.textContent = '⚠ ' + current + '（一覧に見つかりません）';
+      sel.appendChild(extra);
+    }
+    sel.value = current || '';
   }
 
   function findCategoryForEquipment(name) {
@@ -1033,13 +1077,12 @@
     document.getElementById('form-title').textContent = '予約を追加';
     document.getElementById('f-project').value = '';
     document.getElementById('f-category').value = '';
-    document.getElementById('f-equipment').value = '';
     document.getElementById('f-quantity').value = '';
-    document.getElementById('f-supplier').value = '';
     document.getElementById('f-start').value = '';
     document.getElementById('f-end').value = '';
     document.getElementById('f-note').value = '';
-    updateEquipmentDatalist('');
+    populateEquipmentSelect('', '');
+    populateSupplierSelect('');
     document.getElementById('form-delete').style.display = 'none';
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
@@ -1053,8 +1096,7 @@
     openAddForm();
     var cat = findCategoryForEquipment(equipmentName);
     document.getElementById('f-category').value = cat;
-    updateEquipmentDatalist(cat);
-    document.getElementById('f-equipment').value = equipmentName;
+    populateEquipmentSelect(cat, equipmentName);
     document.getElementById('f-start').value = toDateInputValue(dateStr);
     document.getElementById('f-end').value = toDateInputValue(dateStr);
   }
@@ -1065,10 +1107,9 @@
     document.getElementById('f-project').value = b.project || '';
     var cat = findCategoryForEquipment(b.equipment);
     document.getElementById('f-category').value = cat;
-    updateEquipmentDatalist(cat);
-    document.getElementById('f-equipment').value = b.equipment || '';
+    populateEquipmentSelect(cat, b.equipment || '');
     document.getElementById('f-quantity').value = b.quantity || '';
-    document.getElementById('f-supplier').value = b.supplier || '';
+    populateSupplierSelect(b.supplier || '');
     document.getElementById('f-start').value = toDateInputValue(b.startDate);
     document.getElementById('f-end').value = toDateInputValue(b.endDate);
     document.getElementById('f-note').value = b.note || '';
@@ -1102,14 +1143,14 @@
     var project = document.getElementById('f-project').value.trim();
     var equipment = document.getElementById('f-equipment').value.trim();
     var quantity = document.getElementById('f-quantity').value.trim();
-    var supplier = document.getElementById('f-supplier').value.trim();
+    var supplier = document.getElementById('f-supplier').value;
     var start = fromDateInputValue(document.getElementById('f-start').value);
     var end = fromDateInputValue(document.getElementById('f-end').value);
     var note = document.getElementById('f-note').value.trim();
 
     hideFormError();
     if (!project) { showFormError('作品名を入力してください'); return; }
-    if (!equipment) { showFormError('機材名を入力してください'); return; }
+    if (!equipment) { showFormError('機材名を選択してください'); return; }
     if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
       showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
       return;
@@ -1179,16 +1220,7 @@
     });
   }
 
-  // ---------- ガントチャート表示・更新 ----------
-  // マスターガントチャートのタブへ直接飛ぶURL（固定）。
-  // スプレッドシートのファイルID自体は変わらないため、通信不要でここに直接書いておく。
-  var GANTT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/19anYDwAFO_VJdrKJp0cGMuFKgcNhdG1pVNPCDJaNbsY/edit#gid=1048290200';
-
-  function openGanttChart() {
-    // 新しいタブで開くので、このアプリ自体の画面や操作位置はそのまま残る
-    window.open(GANTT_SHEET_URL, '_blank');
-  }
-
+  // ---------- ガントチャート更新 ----------
   function refreshGanttChart() {
     var ok = window.confirm('ガントチャートを最新の内容に更新します。よろしいですか？');
     if (!ok) return;
@@ -1243,9 +1275,11 @@
     // 通信（特にApps Scriptの起動）に時間がかかっても、画面がすぐ見えるようにするため。
     loadCachedEquipmentList();
     loadCachedEquipmentCategories();
+    loadCachedSupplierList();
     loadCachedBookings();
     refreshEquipmentList();
     refreshEquipmentCategories();
+    refreshSupplierList();
     refreshBookings(true);
   }
 
@@ -1263,14 +1297,12 @@
   document.getElementById('project-detail-back').addEventListener('click', closeProjectDetail);
   document.getElementById('equipment-detail-back').addEventListener('click', closeEquipmentCategoryDetail);
   document.getElementById('f-category').addEventListener('change', function () {
-    updateEquipmentDatalist(this.value);
-    document.getElementById('f-equipment').value = '';
+    populateEquipmentSelect(this.value, '');
   });
   document.getElementById('search-input').addEventListener('input', renderCurrentView);
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
   });
-  document.getElementById('gantt-view-btn').addEventListener('click', openGanttChart);
   document.getElementById('gantt-refresh-btn').addEventListener('click', refreshGanttChart);
 
   loadSettings();
