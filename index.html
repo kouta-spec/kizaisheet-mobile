@@ -897,20 +897,25 @@
   }
 
   // ---------- データ取得 ----------
-  function refreshBookings() {
-    showLoading('読み込み中...');
-    return apiGet('bookings', { sinceDays: 30 }).then(function (res) {
-      hideLoading();
+  // silent=true のときは、全画面の読み込み中表示を出さない（起動直後、裏側で
+  // 静かに最新データへ更新するときに使う。前回のキャッシュがすでに画面に
+  // 出ているので、待たせている感じを与えたくないため）。
+  function refreshBookings(silent) {
+    if (!silent) showLoading('読み込み中...');
+    // 機材リストは1年単位で更新する運用のため、今年度分がまるごと見えるよう400日分取得する
+    return apiGet('bookings', { sinceDays: 400 }).then(function (res) {
+      if (!silent) hideLoading();
       if (!res.ok) {
-        showBanner('データの取得に失敗しました: ' + res.error, 'error');
+        if (!silent) showBanner('データの取得に失敗しました: ' + res.error, 'error');
         return;
       }
-      hideBanner();
+      if (!silent) hideBanner();
       bookings = res.bookings;
+      try { localStorage.setItem('kizai_mobile_bookings_cache_v1', JSON.stringify(bookings)); } catch (e) {}
       renderCurrentView();
     }).catch(function (err) {
-      hideLoading();
-      showBanner('通信エラー: ' + err.message, 'error');
+      if (!silent) hideLoading();
+      if (!silent) showBanner('通信エラー: ' + err.message, 'error');
     });
   }
 
@@ -961,6 +966,19 @@
     try {
       var raw = localStorage.getItem('kizai_category_cache_v1');
       if (raw) setEquipmentCategories(JSON.parse(raw));
+    } catch (e) { /* 無視 */ }
+  }
+
+  // 前回表示した予約データのキャッシュを、通信より先に画面へ出す。
+  // これにより、通信に時間がかかる（特にApps Scriptの起動が遅いとき）場合でも、
+  // アプリを開いた瞬間に前回のデータがすぐ見える（裏側で最新版に静かに更新される）。
+  function loadCachedBookings() {
+    try {
+      var raw = localStorage.getItem('kizai_mobile_bookings_cache_v1');
+      if (raw) {
+        bookings = JSON.parse(raw);
+        renderCurrentView();
+      }
     } catch (e) { /* 無視 */ }
   }
 
@@ -1221,11 +1239,14 @@
 
   // ---------- 初期化 ----------
   function initialLoad() {
+    // まずキャッシュ（前回のデータ）を即座に表示してから、裏側で静かに最新版に更新する。
+    // 通信（特にApps Scriptの起動）に時間がかかっても、画面がすぐ見えるようにするため。
     loadCachedEquipmentList();
     loadCachedEquipmentCategories();
+    loadCachedBookings();
     refreshEquipmentList();
     refreshEquipmentCategories();
-    refreshBookings();
+    refreshBookings(true);
   }
 
   document.getElementById('settings-btn').addEventListener('click', openSettings);
