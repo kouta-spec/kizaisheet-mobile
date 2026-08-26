@@ -59,10 +59,11 @@
   }
 
   .search-bar { padding: 12px 14px; background: var(--bg); }
-  .search-bar input {
+  .search-bar input, .search-bar select {
     width: 100%; padding: 11px 14px; border-radius: 14px; border: 1px solid var(--border);
     font-size: 15px; background: white; box-shadow: 0 1px 2px rgba(67,97,238,0.06);
   }
+  .search-bar select { margin-top: 8px; color: var(--text); }
   .gantt-actions { display: flex; gap: 8px; padding: 0 14px 10px; }
   .gantt-actions button {
     flex: 1; padding: 10px 0; border-radius: 14px; border: none;
@@ -257,6 +258,7 @@
 
   <div class="search-bar">
     <input type="text" id="search-input" placeholder="機材名・作品名で検索">
+    <select id="bookings-project-filter"><option value="">作品名で絞り込む（すべて表示）</option></select>
   </div>
 
   <div class="gantt-actions">
@@ -305,8 +307,9 @@
       <h2 id="form-title">予約を追加</h2>
     </div>
     <div class="field">
-      <label>作品名</label>
-      <input type="text" id="f-project">
+      <label>作品名（機材リストに登録済みの作品名と完全一致させるため選択式）</label>
+      <select id="f-project"><option value="">（作品名を選択）</option></select>
+      <input type="text" id="f-project-custom" placeholder="新しい作品名を入力" style="display:none; margin-top:6px;">
     </div>
     <div class="field">
       <label>カテゴリで絞り込む（任意）</label>
@@ -403,6 +406,8 @@
   var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
   var categoryOrder = [];
   var supplierList = []; // 発注先の候補（機材リストF列のプルダウンに設定されているレンタル会社名）
+  var projectList = []; // 作品名の候補（機材リストに既に登録されている作品名。新規入力も可）
+  var PROJECT_CUSTOM_VALUE = '__custom_project__';
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
   var currentView = 'bookings'; // 'bookings' または 'equipment'
 
@@ -467,6 +472,9 @@
     });
     document.getElementById('search-input').placeholder =
       view === 'bookings' ? '機材名・作品名で検索' : '機材名で検索';
+    // 作品名の絞り込みは予約一覧タブでのみ意味があるので、機材の状況タブでは隠す
+    document.getElementById('bookings-project-filter').style.display =
+      view === 'bookings' ? '' : 'none';
     renderCurrentView();
   }
 
@@ -492,11 +500,13 @@
   function renderBookingsGrouped() {
     document.getElementById('summary-bar').style.display = 'none';
     var keyword = document.getElementById('search-input').value.trim().toLowerCase();
+    var projectFilter = document.getElementById('bookings-project-filter').value;
     var listEl = document.getElementById('list');
     var emptyEl = document.getElementById('empty');
     listEl.innerHTML = '';
 
     var filtered = bookings.filter(function (b) {
+      if (projectFilter && b.project !== projectFilter) return false;
       if (!keyword) return true;
       return (b.equipment + ' ' + b.project).toLowerCase().indexOf(keyword) !== -1;
     });
@@ -1003,6 +1013,89 @@
     sel.value = current || '';
   }
 
+  // ---------- 作品名の一覧（予約フォームの選択式用） ----------
+  // 機材リストに既に登録されている作品名を一覧化する。作品名が機材リストの表記と
+  // 完全一致していないと、新規追加時に同じ作品のグループへ正しく配置されないため、
+  // 既存作品は選択式（プルダウン）にして表記ゆれをなくす。まだ機材リストに無い
+  // 新しい作品名だけ、「＋新しい作品名を入力」から自由入力できる。
+  function refreshProjectList() {
+    return apiGet('projectList').then(function (res) {
+      if (res.ok) {
+        projectList = res.projects;
+        try { localStorage.setItem('kizai_mobile_project_cache_v1', JSON.stringify(projectList)); } catch (e) {}
+        populateProjectSelect();
+        populateBookingsProjectFilter();
+      }
+    }).catch(function () { /* 取得できなくても致命的ではない（前回キャッシュを使う） */ });
+  }
+
+  function loadCachedProjectList() {
+    try {
+      var raw = localStorage.getItem('kizai_mobile_project_cache_v1');
+      if (raw) {
+        projectList = JSON.parse(raw);
+        populateProjectSelect();
+        populateBookingsProjectFilter();
+      }
+    } catch (e) { /* 無視 */ }
+  }
+
+  // 予約一覧タブの「作品名で絞り込む」プルダウン。予約フォームの作品名選択とは
+  // 別の要素（フォームを開いていなくても絞り込めるように）なので、専用に用意する。
+  function populateBookingsProjectFilter() {
+    var sel = document.getElementById('bookings-project-filter');
+    var current = sel.value;
+    sel.innerHTML = '<option value="">作品名で絞り込む（すべて表示）</option>';
+    projectList.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (current && projectList.indexOf(current) !== -1) sel.value = current;
+  }
+
+  function populateProjectSelect(selectedValue) {
+    var sel = document.getElementById('f-project');
+    var current = selectedValue !== undefined ? selectedValue : sel.value;
+    sel.innerHTML = '';
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '（作品名を選択）';
+    sel.appendChild(placeholder);
+    projectList.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    // 現在の値が一覧に無い（まだ機材リストに載っていない新しい作品名を編集で開いた
+    // 場合など）場合も、選び直させて消してしまわないよう、そのまま選べる選択肢として残す。
+    if (current && current !== PROJECT_CUSTOM_VALUE && projectList.indexOf(current) === -1) {
+      var extra = document.createElement('option');
+      extra.value = current;
+      extra.textContent = current;
+      sel.appendChild(extra);
+    }
+    var customOpt = document.createElement('option');
+    customOpt.value = PROJECT_CUSTOM_VALUE;
+    customOpt.textContent = '＋新しい作品名を入力...';
+    sel.appendChild(customOpt);
+    sel.value = (current === PROJECT_CUSTOM_VALUE) ? PROJECT_CUSTOM_VALUE : (current || '');
+    updateProjectCustomInputVisibility();
+  }
+
+  function updateProjectCustomInputVisibility() {
+    var sel = document.getElementById('f-project');
+    var customInput = document.getElementById('f-project-custom');
+    if (sel.value === PROJECT_CUSTOM_VALUE) {
+      customInput.style.display = '';
+    } else {
+      customInput.style.display = 'none';
+      customInput.value = '';
+    }
+  }
+
   // 前回表示した予約データのキャッシュを、通信より先に画面へ出す。
   // これにより、通信に時間がかかる（特にApps Scriptの起動が遅いとき）場合でも、
   // アプリを開いた瞬間に前回のデータがすぐ見える（裏側で最新版に静かに更新される）。
@@ -1084,12 +1177,12 @@
   function openAddForm() {
     editingRow = null;
     document.getElementById('form-title').textContent = '予約を追加';
-    document.getElementById('f-project').value = '';
     document.getElementById('f-category').value = '';
     document.getElementById('f-quantity').value = '';
     document.getElementById('f-start').value = '';
     document.getElementById('f-end').value = '';
     document.getElementById('f-note').value = '';
+    populateProjectSelect('');
     populateEquipmentSelect('', '');
     populateSupplierSelect('');
     document.getElementById('form-delete').style.display = 'none';
@@ -1113,7 +1206,7 @@
   function openEditForm(b) {
     editingRow = b.row;
     document.getElementById('form-title').textContent = '予約を編集（' + b.row + '行目）';
-    document.getElementById('f-project').value = b.project || '';
+    populateProjectSelect(b.project || '');
     var cat = findCategoryForEquipment(b.equipment);
     document.getElementById('f-category').value = cat;
     populateEquipmentSelect(cat, b.equipment || '');
@@ -1149,7 +1242,10 @@
   }
 
   function submitForm() {
-    var project = document.getElementById('f-project').value.trim();
+    var projectSel = document.getElementById('f-project').value;
+    var project = (projectSel === PROJECT_CUSTOM_VALUE)
+      ? document.getElementById('f-project-custom').value.trim()
+      : projectSel;
     var equipment = document.getElementById('f-equipment').value.trim();
     var quantity = document.getElementById('f-quantity').value.trim();
     var supplier = document.getElementById('f-supplier').value;
@@ -1158,7 +1254,11 @@
     var note = document.getElementById('f-note').value.trim();
 
     hideFormError();
-    if (!project) { showFormError('作品名を入力してください'); return; }
+    if (projectSel === PROJECT_CUSTOM_VALUE && !project) {
+      showFormError('新しい作品名を入力してください');
+      return;
+    }
+    if (!project) { showFormError('作品名を選択してください'); return; }
     if (!equipment) { showFormError('機材名を選択してください'); return; }
     if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
       showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
@@ -1285,10 +1385,12 @@
     loadCachedEquipmentList();
     loadCachedEquipmentCategories();
     loadCachedSupplierList();
+    loadCachedProjectList();
     loadCachedBookings();
     refreshEquipmentList();
     refreshEquipmentCategories();
     refreshSupplierList();
+    refreshProjectList();
     refreshBookings(true);
   }
 
@@ -1308,7 +1410,12 @@
   document.getElementById('f-category').addEventListener('change', function () {
     populateEquipmentSelect(this.value, '');
   });
+  document.getElementById('f-project').addEventListener('change', function () {
+    updateProjectCustomInputVisibility();
+    if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
+  });
   document.getElementById('search-input').addEventListener('input', renderCurrentView);
+  document.getElementById('bookings-project-filter').addEventListener('change', renderCurrentView);
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
   });
