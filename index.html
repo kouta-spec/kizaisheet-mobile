@@ -30,14 +30,26 @@
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0;
-    background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
+  html { background: var(--bg); }
+  /* bodyには背景を付けない：付けてしまうと、bodyの実際の高さ（＝中身の高さ）ぶんだけ
+     不透明な板として#bg-layer（背景画像レイヤー）の上に乗ってしまい、コンテンツが
+     ある範囲では壁紙が一切透けなくなる（htmlのbackgroundはCSS上「キャンバス背景」
+     として扱われ描画順が特別なので、この問題は起きない）。 */
+  body { background: transparent; }
   #app { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
+  /* ユーザーが設定画面から任意の背景画像を選ぶと、ここに画面全体を覆う形で敷かれる。
+     画像が未設定の間は単なる白背景（--bg）のまま。カード・タブ・シートは半透明＋
+     ぼかし（backdrop-filter）にしてあるので、画像を設定すると壁紙のように透けて見える。 */
+  #bg-layer {
+    position: fixed; inset: 0; z-index: -1;
+    background-color: var(--bg);
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+  }
   header {
-    position: sticky; top: 0; z-index: 10;
     background: linear-gradient(135deg, var(--blue-deep), var(--blue)); color: white;
     padding: calc(env(safe-area-inset-top) + 14px) 18px 18px;
     display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
@@ -56,7 +68,13 @@
   }
   header button.icon-btn:hover { transform: scale(1.08); }
   header button.icon-btn:active { transform: scale(0.92); }
-  .tabs { display: flex; gap: 8px; padding: 14px 14px 0; }
+  .tabs {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255,255,255,0.62);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    display: flex; gap: 8px; padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    box-shadow: 0 2px 6px rgba(67,97,238,0.06);
+  }
   .tab-btn {
     flex: 1; padding: 10px 0; border-radius: 24px; border: none;
     background: white; font-size: 13px; font-weight: 700; color: var(--sub); cursor: pointer;
@@ -69,10 +87,12 @@
     box-shadow: 0 4px 10px rgba(67,97,238,0.35);
   }
 
-  .search-bar { padding: 12px 14px; background: var(--bg); }
+  .search-bar { padding: 12px 14px; background: transparent; }
   .search-bar input {
     width: 100%; padding: 11px 14px; border-radius: 14px; border: 1px solid var(--border);
-    font-size: 15px; background: white; box-shadow: 0 1px 2px rgba(67,97,238,0.06);
+    font-size: 15px; background: rgba(255,255,255,0.62);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 1px 2px rgba(67,97,238,0.06);
   }
   .gantt-actions { display: flex; gap: 8px; padding: 0 14px 10px; }
   .gantt-actions button {
@@ -98,7 +118,8 @@
 
   #list { padding: 0 14px; display: flex; flex-direction: column; gap: 10px; }
   .card {
-    background: var(--card); border-radius: 16px; padding: 13px 15px;
+    background: rgba(255,255,255,0.58); border-radius: 16px; padding: 13px 15px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 2px 8px rgba(67,97,238,0.10);
     border: 1px solid var(--border); border-left: 5px solid var(--blue);
     animation: fadeInUp 0.35s ease both;
@@ -121,7 +142,9 @@
   .group-header {
     font-size: 13.5px; font-weight: 800; color: var(--blue-dark);
     margin: 10px 2px -2px; padding: 12px 14px; cursor: pointer;
-    background: linear-gradient(120deg, var(--tint), var(--tint2)); border-radius: 14px;
+    background: linear-gradient(120deg, rgba(234,240,255,0.6), rgba(223,233,255,0.6));
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-radius: 14px;
     display: flex; justify-content: space-between; align-items: center;
     box-shadow: 0 1px 3px rgba(67,97,238,0.08);
     animation: fadeInUp 0.35s ease both;
@@ -213,7 +236,9 @@
   .sheet-overlay.show { opacity: 1; pointer-events: auto; }
   .sheet {
     position: fixed; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto;
-    background: white; border-radius: 22px 22px 0 0; padding: 18px;
+    background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-radius: 22px 22px 0 0; padding: 18px;
     padding-bottom: calc(env(safe-area-inset-bottom) + 18px);
     max-height: 85vh; overflow-y: auto; z-index: 31;
     transform: translateY(100%);
@@ -280,6 +305,24 @@
   }
   .hint { font-size: 12px; color: var(--sub); line-height: 1.6; margin-bottom: 16px; }
 
+  /* 予約追加フォームの「機材を複数選択」用。カテゴリ→機材名を選んで「リストに追加」を
+     押すたびに、選択済み機材カード（機材ごとの数量・発注先入力）が下に積み上がる。 */
+  #equipment-add-btn { margin-bottom: 14px; }
+  .selected-eq-row {
+    border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 10px;
+    background: var(--tint); animation: fadeInUp 0.25s ease both;
+  }
+  .selected-eq-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+  .selected-eq-name { font-size: 14px; font-weight: 700; color: var(--text); }
+  .selected-eq-remove {
+    background: none; border: none; color: var(--red); font-size: 13px; font-weight: 700;
+    cursor: pointer; padding: 4px 6px; flex: 0 0 auto; transition: transform 0.1s ease-out;
+  }
+  .selected-eq-remove:active { transform: scale(0.92); }
+  .selected-eq-row .field-row { gap: 8px; margin-bottom: 0; }
+  .selected-eq-row .field { margin-bottom: 0; }
+  .selected-eq-empty { font-size: 13px; color: var(--sub); padding: 14px 4px; text-align: center; }
+
   .spinner {
     display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4);
     border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px;
@@ -300,6 +343,7 @@
 </style>
 </head>
 <body>
+<div id="bg-layer"></div>
 <div id="app">
   <header>
     <h1>機材シート2026</h1>
@@ -345,6 +389,18 @@
       <label>合言葉（トークン）</label>
       <input type="text" id="settings-token" placeholder="MOBILE_API_TOKENに設定した文字列">
     </div>
+    <div class="settings-field">
+      <label>背景画像（お好みで設定できます）</label>
+      <div id="bg-preview-wrap" style="display:none; margin-bottom:10px;">
+        <img id="bg-preview" style="width:100%; max-height:140px; object-fit:cover; border-radius:12px; display:block; border:1px solid var(--border);">
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn secondary" id="bg-choose-btn" style="flex:1;">画像を選ぶ</button>
+        <button type="button" class="btn secondary" id="bg-clear-btn" style="flex:1; display:none; color:var(--red);">背景を削除</button>
+      </div>
+      <input type="file" id="bg-file-input" accept="image/*" style="display:none;">
+      <div class="hint" style="margin-top:8px; margin-bottom:0;">選んだ画像はこのスマホの中だけに保存されます（他の端末やApps Script側には送信されません）。</div>
+    </div>
     <div class="form-error" id="settings-error"></div>
     <div class="sheet-actions">
       <button class="btn secondary" id="settings-cancel">閉じる</button>
@@ -373,7 +429,8 @@
       <label>機材名（マスターガントチャートの一覧から選択）</label>
       <select id="f-equipment"><option value="">（機材を選択）</option></select>
     </div>
-    <div class="field-row">
+    <!-- 編集時（既存の1件のみ）はここで数量・発注先を直接入力 -->
+    <div id="single-equipment-fields" class="field-row">
       <div class="field">
         <label>数量</label>
         <input type="number" id="f-quantity" min="1" placeholder="1">
@@ -382,6 +439,13 @@
         <label>発注先</label>
         <select id="f-supplier"><option value="">（自社在庫・セット機材）</option></select>
       </div>
+    </div>
+    <!-- 新規追加時：カテゴリ→機材名を選んで「リストに追加」を押すたびに、下に
+         選択済み機材カード（機材ごとの数量・発注先入力）が積み上がっていく。
+         選び終えたら一番下の「保存する」で一括登録する。 -->
+    <div id="multi-equipment-fields">
+      <button type="button" class="btn secondary" id="equipment-add-btn" style="width:100%;">＋ この機材をリストに追加</button>
+      <div id="selected-equipment-list"></div>
     </div>
     <div class="field-row">
       <div class="field">
@@ -463,6 +527,7 @@
   var projectList = []; // 作品名の候補（機材リストに既に登録されている作品名。新規入力も可）
   var PROJECT_CUSTOM_VALUE = '__custom_project__';
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
+  var selectedEquipmentRows = []; // 新規追加フォームで「リストに追加」済みの機材（{equipment, quantity, supplier}の配列）
   var currentView = 'bookings'; // 'bookings' または 'equipment'
 
   // ---------- 設定の読み書き ----------
@@ -1225,27 +1290,32 @@
     editingRow = null;
     document.getElementById('form-title').textContent = '予約を追加';
     document.getElementById('f-category').value = '';
-    document.getElementById('f-quantity').value = '';
     document.getElementById('f-start').value = '';
     document.getElementById('f-end').value = '';
     document.getElementById('f-note').value = '';
     populateProjectSelect('');
     populateEquipmentSelect('', '');
-    populateSupplierSelect('');
+    // 新規追加は「カテゴリ→機材名を選ぶ→リストに追加」を繰り返す複数選択式にする。
+    document.getElementById('single-equipment-fields').style.display = 'none';
+    document.getElementById('multi-equipment-fields').style.display = 'block';
+    selectedEquipmentRows = [];
+    renderSelectedEquipmentList();
     document.getElementById('form-delete').style.display = 'none';
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
 
   // 機材カードのカレンダーで日付をタップしたときに呼ばれる。その機材・その日を
-  // あらかじめ入れた状態で、予約追加フォームを開く（開始日・終了日は同じ日を仮設定、
-  // 終了日は必要に応じて後から変更してもらう）。
+  // あらかじめ選択済みリストに入れた状態で、予約追加フォームを開く（開始日・終了日は
+  // 同じ日を仮設定、終了日は必要に応じて後から変更してもらう）。
   function openAddFormForDate(equipmentName, dateStr) {
     closeEquipmentCategoryDetail();
     openAddForm();
     var cat = findCategoryForEquipment(equipmentName);
     document.getElementById('f-category').value = cat;
     populateEquipmentSelect(cat, equipmentName);
+    selectedEquipmentRows = [{ equipment: equipmentName, quantity: '', supplier: '' }];
+    renderSelectedEquipmentList();
     document.getElementById('f-start').value = toDateInputValue(dateStr);
     document.getElementById('f-end').value = toDateInputValue(dateStr);
   }
@@ -1253,6 +1323,9 @@
   function openEditForm(b) {
     editingRow = b.row;
     document.getElementById('form-title').textContent = '予約を編集（' + b.row + '行目）';
+    // 編集は既存の1件のみを扱うため、機材は単一選択（数量・発注先を直接入力）に戻す。
+    document.getElementById('single-equipment-fields').style.display = 'flex';
+    document.getElementById('multi-equipment-fields').style.display = 'none';
     populateProjectSelect(b.project || '');
     var cat = findCategoryForEquipment(b.equipment);
     document.getElementById('f-category').value = cat;
@@ -1265,6 +1338,117 @@
     document.getElementById('form-delete').style.display = 'block';
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
+  }
+
+  // ---------- 機材の複数選択（新規追加フォーム用） ----------
+  // カテゴリ→機材名のプルダウンで選んだ機材を「リストに追加」ボタンで選択済みリストへ
+  // 積み上げていく。同じ機材を二重に追加はさせず、数量・発注先は機材ごとに個別入力する。
+  function addSelectedEquipment() {
+    var equipment = document.getElementById('f-equipment').value.trim();
+    if (!equipment) { showFormError('機材名を選択してください'); return; }
+    if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
+      showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
+      return;
+    }
+    var already = selectedEquipmentRows.some(function (row) { return row.equipment === equipment; });
+    if (already) {
+      showFormError('「' + equipment + '」は既にリストに追加されています。');
+      return;
+    }
+    hideFormError();
+    selectedEquipmentRows.push({ equipment: equipment, quantity: '', supplier: '' });
+    renderSelectedEquipmentList();
+    // 次の機材を選びやすいよう、機材名の選択だけ空欄に戻す（カテゴリ絞り込みは維持）。
+    populateEquipmentSelect(document.getElementById('f-category').value, '');
+  }
+
+  function buildSupplierSelectElement(idx, selectedValue) {
+    var sel = document.createElement('select');
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '（自社在庫・セット機材）';
+    sel.appendChild(placeholder);
+    supplierList.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (selectedValue && supplierList.indexOf(selectedValue) === -1) {
+      var extra = document.createElement('option');
+      extra.value = selectedValue;
+      extra.textContent = selectedValue;
+      sel.appendChild(extra);
+    }
+    sel.value = selectedValue || '';
+    sel.addEventListener('change', function () {
+      selectedEquipmentRows[idx].supplier = sel.value;
+    });
+    return sel;
+  }
+
+  function renderSelectedEquipmentList() {
+    var listEl = document.getElementById('selected-equipment-list');
+    listEl.innerHTML = '';
+    if (selectedEquipmentRows.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'selected-eq-empty';
+      empty.textContent = '機材が選択されていません。上でカテゴリ・機材名を選んで「リストに追加」を押してください。';
+      listEl.appendChild(empty);
+      return;
+    }
+    selectedEquipmentRows.forEach(function (row, idx) {
+      var box = document.createElement('div');
+      box.className = 'selected-eq-row';
+
+      var head = document.createElement('div');
+      head.className = 'selected-eq-head';
+      var nameEl = document.createElement('span');
+      nameEl.className = 'selected-eq-name';
+      nameEl.textContent = row.equipment;
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'selected-eq-remove';
+      removeBtn.textContent = '✕ 削除';
+      removeBtn.addEventListener('click', function () {
+        selectedEquipmentRows.splice(idx, 1);
+        renderSelectedEquipmentList();
+      });
+      head.appendChild(nameEl);
+      head.appendChild(removeBtn);
+      box.appendChild(head);
+
+      var row2 = document.createElement('div');
+      row2.className = 'field-row';
+
+      var qtyField = document.createElement('div');
+      qtyField.className = 'field';
+      var qtyLabel = document.createElement('label');
+      qtyLabel.textContent = '数量';
+      var qtyInput = document.createElement('input');
+      qtyInput.type = 'number';
+      qtyInput.min = '1';
+      qtyInput.placeholder = '1';
+      qtyInput.value = row.quantity || '';
+      qtyInput.addEventListener('input', function () {
+        selectedEquipmentRows[idx].quantity = qtyInput.value;
+      });
+      qtyField.appendChild(qtyLabel);
+      qtyField.appendChild(qtyInput);
+
+      var supField = document.createElement('div');
+      supField.className = 'field';
+      var supLabel = document.createElement('label');
+      supLabel.textContent = '発注先';
+      supField.appendChild(supLabel);
+      supField.appendChild(buildSupplierSelectElement(idx, row.supplier));
+
+      row2.appendChild(qtyField);
+      row2.appendChild(supField);
+      box.appendChild(row2);
+
+      listEl.appendChild(box);
+    });
   }
 
   function toDateInputValue(yyyymmddSlash) {
@@ -1293,9 +1477,6 @@
     var project = (projectSel === PROJECT_CUSTOM_VALUE)
       ? document.getElementById('f-project-custom').value.trim()
       : projectSel;
-    var equipment = document.getElementById('f-equipment').value.trim();
-    var quantity = document.getElementById('f-quantity').value.trim();
-    var supplier = document.getElementById('f-supplier').value;
     var start = fromDateInputValue(document.getElementById('f-start').value);
     var end = fromDateInputValue(document.getElementById('f-end').value);
     var note = document.getElementById('f-note').value.trim();
@@ -1306,15 +1487,30 @@
       return;
     }
     if (!project) { showFormError('作品名を選択してください'); return; }
+    if (!start || !end) { showFormError('開始日・終了日を入力してください'); return; }
+
+    if (editingRow) {
+      submitSingleEditBooking(project, start, end, note);
+    } else {
+      submitMultiAddBooking(project, start, end, note);
+    }
+  }
+
+  // 編集（既存の1件）は今まで通り、1回のAPI呼び出しで更新する。
+  function submitSingleEditBooking(project, start, end, note) {
+    var equipment = document.getElementById('f-equipment').value.trim();
+    var quantity = document.getElementById('f-quantity').value.trim();
+    var supplier = document.getElementById('f-supplier').value;
+
     if (!equipment) { showFormError('機材名を選択してください'); return; }
     if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
       showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
       return;
     }
-    if (!start || !end) { showFormError('開始日・終了日を入力してください'); return; }
 
     var body = {
-      action: editingRow ? 'updateBooking' : 'addBooking',
+      action: 'updateBooking',
+      row: editingRow,
       project: project,
       equipment: equipment,
       quantity: quantity ? Number(quantity) : undefined,
@@ -1323,9 +1519,8 @@
       endDate: end,
       note: note
     };
-    if (editingRow) body.row = editingRow;
 
-    showLoading(editingRow ? '更新中...' : '登録中...');
+    showLoading('更新中...');
     apiPost(body).then(function (res) {
       hideLoading();
       if (!res.ok) {
@@ -1346,6 +1541,78 @@
       hideLoading();
       showFormError('通信エラー: ' + err.message);
     });
+  }
+
+  // 新規追加は、選択済みリストの機材の件数ぶんだけ、1件ずつ順番に登録APIを呼び出す
+  // （スプレッドシートへの書き込みが同時に重ならないよう、あえて並行にはしない）。
+  // 作品名・開始日・終了日・備考は全機材で共通、数量・発注先は機材ごとの値を使う。
+  function submitMultiAddBooking(project, start, end, note) {
+    if (selectedEquipmentRows.length === 0) {
+      showFormError('機材を1つ以上リストに追加してください');
+      return;
+    }
+    for (var i = 0; i < selectedEquipmentRows.length; i++) {
+      var eq = selectedEquipmentRows[i].equipment;
+      if (equipmentList.length > 0 && equipmentList.indexOf(eq) === -1) {
+        showFormError('「' + eq + '」がマスターガントチャートの一覧と一致しません。選び直してください。');
+        return;
+      }
+    }
+
+    var total = selectedEquipmentRows.length;
+    var successCount = 0;
+    var noticeMessages = [];
+    var errorMessages = [];
+
+    function postNext(index) {
+      if (index >= total) { finishMultiAdd(); return; }
+      var row = selectedEquipmentRows[index];
+      showLoading('登録中...（' + (index + 1) + '/' + total + '件）');
+      var body = {
+        action: 'addBooking',
+        project: project,
+        equipment: row.equipment,
+        quantity: row.quantity ? Number(row.quantity) : undefined,
+        supplier: row.supplier,
+        startDate: start,
+        endDate: end,
+        note: note
+      };
+      apiPost(body).then(function (res) {
+        if (res.ok) {
+          successCount++;
+          if (res.overlap) {
+            noticeMessages.push((res.overlapMessage ? res.overlapMessage + '\n' : '') + res.message);
+          } else if (res.warning) {
+            noticeMessages.push(res.warning);
+          }
+        } else {
+          errorMessages.push(row.equipment + '：' + (res.error || '保存に失敗しました'));
+        }
+        postNext(index + 1);
+      }).catch(function (err) {
+        errorMessages.push(row.equipment + '：通信エラー（' + err.message + '）');
+        postNext(index + 1);
+      });
+    }
+
+    function finishMultiAdd() {
+      hideLoading();
+      if (successCount === 0) {
+        showFormError(errorMessages.join('\n') || '保存に失敗しました');
+        return;
+      }
+      closeForm();
+      var messages = [successCount + '/' + total + '件を登録しました。'];
+      noticeMessages.forEach(function (m) { messages.push(m); });
+      errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
+      var hasIssue = (noticeMessages.length > 0 || errorMessages.length > 0);
+      showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info');
+      if (!hasIssue) setTimeout(hideBanner, 4000);
+      refreshBookings();
+    }
+
+    postNext(0);
   }
 
   function deleteCurrentBooking() {
@@ -1404,11 +1671,101 @@
     document.getElementById('settings-url').value = settings.url;
     document.getElementById('settings-token').value = settings.token;
     document.getElementById('settings-error').classList.remove('show');
+    updateBgSettingsUi();
     document.getElementById('settings-overlay').classList.add('show');
   }
   function closeSettings() {
     if (!hasSettings()) return; // 未設定の状態では閉じさせない（データが読み込めないため）
     document.getElementById('settings-overlay').classList.remove('show');
+  }
+
+  // ---------- 背景画像（お好みの写真を壁紙として設定） ----------
+  // このスマホのlocalStorageだけに保存する（Apps Script側には一切送らない）。
+  // 画像はそのまま保存すると容量を圧迫しやすいので、canvasで長辺1280px・JPEG品質0.82に
+  // 縮小してから保存する。
+  var BG_STORAGE_KEY = 'kizai_mobile_bg_image_v1';
+  var BG_MAX_DIMENSION = 1280;
+  var BG_JPEG_QUALITY = 0.82;
+
+  function loadBackgroundImage() {
+    try {
+      var data = localStorage.getItem(BG_STORAGE_KEY);
+      if (data) applyBackgroundImage(data);
+    } catch (e) { /* 読み込めなくても致命的ではない（白背景のまま） */ }
+  }
+
+  function applyBackgroundImage(dataUrl) {
+    document.getElementById('bg-layer').style.backgroundImage = "url('" + dataUrl + "')";
+  }
+
+  function updateBgSettingsUi() {
+    var data = null;
+    try { data = localStorage.getItem(BG_STORAGE_KEY); } catch (e) { /* 無視 */ }
+    var wrap = document.getElementById('bg-preview-wrap');
+    var img = document.getElementById('bg-preview');
+    var clearBtn = document.getElementById('bg-clear-btn');
+    if (data) {
+      wrap.style.display = 'block';
+      img.src = data;
+      clearBtn.style.display = 'block';
+    } else {
+      wrap.style.display = 'none';
+      clearBtn.style.display = 'none';
+    }
+  }
+
+  function clearBackgroundImage() {
+    document.getElementById('bg-layer').style.backgroundImage = 'none';
+    try { localStorage.removeItem(BG_STORAGE_KEY); } catch (e) { /* 無視 */ }
+    updateBgSettingsUi();
+  }
+
+  // 選んだ画像ファイルを読み込み、長辺1280pxに収まるよう縮小・JPEG圧縮してから保存する。
+  function handleBgFileSelected(file) {
+    if (!file) return;
+    var errEl = document.getElementById('settings-error');
+    errEl.classList.remove('show');
+    var reader = new FileReader();
+    reader.onload = function () {
+      var srcImg = new Image();
+      srcImg.onload = function () {
+        var w = srcImg.naturalWidth, h = srcImg.naturalHeight;
+        var scale = Math.min(1, BG_MAX_DIMENSION / Math.max(w, h));
+        var outW = Math.round(w * scale), outH = Math.round(h * scale);
+        var canvas = document.createElement('canvas');
+        canvas.width = outW;
+        canvas.height = outH;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(srcImg, 0, 0, outW, outH);
+        var dataUrl;
+        try {
+          dataUrl = canvas.toDataURL('image/jpeg', BG_JPEG_QUALITY);
+        } catch (e) {
+          errEl.textContent = '画像の読み込みに失敗しました';
+          errEl.classList.add('show');
+          return;
+        }
+        try {
+          localStorage.setItem(BG_STORAGE_KEY, dataUrl);
+        } catch (e) {
+          errEl.textContent = '画像の保存に失敗しました（容量が大きすぎる可能性があります。別の画像でお試しください）';
+          errEl.classList.add('show');
+          return;
+        }
+        applyBackgroundImage(dataUrl);
+        updateBgSettingsUi();
+      };
+      srcImg.onerror = function () {
+        errEl.textContent = '画像の読み込みに失敗しました';
+        errEl.classList.add('show');
+      };
+      srcImg.src = reader.result;
+    };
+    reader.onerror = function () {
+      errEl.textContent = '画像の読み込みに失敗しました';
+      errEl.classList.add('show');
+    };
+    reader.readAsDataURL(file);
   }
   function saveSettingsAndConnect() {
     var url = document.getElementById('settings-url').value.trim();
@@ -1448,6 +1805,7 @@
   document.getElementById('form-cancel').addEventListener('click', closeForm);
   document.getElementById('form-save').addEventListener('click', submitForm);
   document.getElementById('form-delete').addEventListener('click', deleteCurrentBooking);
+  document.getElementById('equipment-add-btn').addEventListener('click', addSelectedEquipment);
   document.getElementById('project-detail-close').addEventListener('click', closeProjectDetail);
   document.getElementById('equipment-detail-close').addEventListener('click', closeEquipmentCategoryDetail);
   document.getElementById('settings-back').addEventListener('click', closeSettings);
@@ -1466,7 +1824,17 @@
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
   });
   document.getElementById('gantt-refresh-btn').addEventListener('click', refreshGanttChart);
+  document.getElementById('bg-choose-btn').addEventListener('click', function () {
+    document.getElementById('bg-file-input').click();
+  });
+  document.getElementById('bg-file-input').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    handleBgFileSelected(file);
+    this.value = ''; // 同じファイルを選び直しても change が発火するようにリセット
+  });
+  document.getElementById('bg-clear-btn').addEventListener('click', clearBackgroundImage);
 
+  loadBackgroundImage();
   loadSettings();
   if (hasSettings()) {
     initialLoad();
