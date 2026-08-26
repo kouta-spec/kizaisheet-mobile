@@ -59,11 +59,10 @@
   }
 
   .search-bar { padding: 12px 14px; background: var(--bg); }
-  .search-bar input, .search-bar select {
+  .search-bar input {
     width: 100%; padding: 11px 14px; border-radius: 14px; border: 1px solid var(--border);
     font-size: 15px; background: white; box-shadow: 0 1px 2px rgba(67,97,238,0.06);
   }
-  .search-bar select { margin-top: 8px; color: var(--text); }
   .gantt-actions { display: flex; gap: 8px; padding: 0 14px 10px; }
   .gantt-actions button {
     flex: 1; padding: 10px 0; border-radius: 14px; border: none;
@@ -258,7 +257,6 @@
 
   <div class="search-bar">
     <input type="text" id="search-input" placeholder="機材名・作品名で検索">
-    <select id="bookings-project-filter"><option value="">作品名で絞り込む（すべて表示）</option></select>
   </div>
 
   <div class="gantt-actions">
@@ -472,9 +470,6 @@
     });
     document.getElementById('search-input').placeholder =
       view === 'bookings' ? '機材名・作品名で検索' : '機材名で検索';
-    // 作品名の絞り込みは予約一覧タブでのみ意味があるので、機材の状況タブでは隠す
-    document.getElementById('bookings-project-filter').style.display =
-      view === 'bookings' ? '' : 'none';
     renderCurrentView();
   }
 
@@ -500,13 +495,11 @@
   function renderBookingsGrouped() {
     document.getElementById('summary-bar').style.display = 'none';
     var keyword = document.getElementById('search-input').value.trim().toLowerCase();
-    var projectFilter = document.getElementById('bookings-project-filter').value;
     var listEl = document.getElementById('list');
     var emptyEl = document.getElementById('empty');
     listEl.innerHTML = '';
 
     var filtered = bookings.filter(function (b) {
-      if (projectFilter && b.project !== projectFilter) return false;
       if (!keyword) return true;
       return (b.equipment + ' ' + b.project).toLowerCase().indexOf(keyword) !== -1;
     });
@@ -1024,7 +1017,6 @@
         projectList = res.projects;
         try { localStorage.setItem('kizai_mobile_project_cache_v1', JSON.stringify(projectList)); } catch (e) {}
         populateProjectSelect();
-        populateBookingsProjectFilter();
       }
     }).catch(function () { /* 取得できなくても致命的ではない（前回キャッシュを使う） */ });
   }
@@ -1032,27 +1024,8 @@
   function loadCachedProjectList() {
     try {
       var raw = localStorage.getItem('kizai_mobile_project_cache_v1');
-      if (raw) {
-        projectList = JSON.parse(raw);
-        populateProjectSelect();
-        populateBookingsProjectFilter();
-      }
+      if (raw) { projectList = JSON.parse(raw); populateProjectSelect(); }
     } catch (e) { /* 無視 */ }
-  }
-
-  // 予約一覧タブの「作品名で絞り込む」プルダウン。予約フォームの作品名選択とは
-  // 別の要素（フォームを開いていなくても絞り込めるように）なので、専用に用意する。
-  function populateBookingsProjectFilter() {
-    var sel = document.getElementById('bookings-project-filter');
-    var current = sel.value;
-    sel.innerHTML = '<option value="">作品名で絞り込む（すべて表示）</option>';
-    projectList.forEach(function (name) {
-      var opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      sel.appendChild(opt);
-    });
-    if (current && projectList.indexOf(current) !== -1) sel.value = current;
   }
 
   function populateProjectSelect(selectedValue) {
@@ -1415,7 +1388,6 @@
     if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
   });
   document.getElementById('search-input').addEventListener('input', renderCurrentView);
-  document.getElementById('bookings-project-filter').addEventListener('change', renderCurrentView);
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
   });
