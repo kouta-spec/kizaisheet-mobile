@@ -52,15 +52,16 @@
     grid-column: 3; justify-self: end;
     background: rgba(255,255,255,0.18); border: none; color: white; font-size: 18px;
     padding: 7px 9px; border-radius: 10px; cursor: pointer;
-    transition: transform 0.1s ease-out;
+    transition: transform 0.15s ease;
   }
+  header button.icon-btn:hover { transform: scale(1.08); }
   header button.icon-btn:active { transform: scale(0.92); }
   .tabs { display: flex; gap: 8px; padding: 14px 14px 0; }
   .tab-btn {
     flex: 1; padding: 10px 0; border-radius: 24px; border: none;
     background: white; font-size: 13px; font-weight: 700; color: var(--sub); cursor: pointer;
     box-shadow: 0 1px 3px rgba(67,97,238,0.08);
-    transition: transform 0.1s ease-out, box-shadow 0.15s ease-out;
+    transition: transform 0.1s ease-out, box-shadow 0.15s ease-out, background 0.2s ease, color 0.2s ease;
   }
   .tab-btn:active { transform: scale(0.96); }
   .tab-btn.active {
@@ -92,14 +93,15 @@
   #status-banner.error { background: #ffe3e8; color: #c81e42; }
   #status-banner.warn { background: #fff2da; color: #a35a00; }
 
-  @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
 
   #list { padding: 0 14px; display: flex; flex-direction: column; gap: 10px; }
   .card {
     background: var(--card); border-radius: 16px; padding: 13px 15px;
     box-shadow: 0 2px 8px rgba(67,97,238,0.10);
     border: 1px solid var(--border); border-left: 5px solid var(--blue);
-    animation: fadeInUp 0.25s ease-out both;
+    animation: fadeInUp 0.35s ease both;
     transition: transform 0.1s ease-out, box-shadow 0.15s ease-out;
   }
   .card:active { transform: scale(0.98); }
@@ -122,9 +124,10 @@
     background: linear-gradient(120deg, var(--tint), var(--tint2)); border-radius: 14px;
     display: flex; justify-content: space-between; align-items: center;
     box-shadow: 0 1px 3px rgba(67,97,238,0.08);
-    animation: fadeInUp 0.25s ease-out both;
-    transition: transform 0.1s ease-out;
+    animation: fadeInUp 0.35s ease both;
+    transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
   }
+  .group-header:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
   .group-header:active { transform: scale(0.98); }
   .group-header:first-child { margin-top: 0; }
   .group-header .chevron { color: var(--blue-dark); font-size: 14px; font-weight: 700; }
@@ -194,8 +197,9 @@
     width: 58px; height: 58px; border-radius: 50%;
     background: linear-gradient(145deg, var(--blue-light), var(--blue-deep)); color: white;
     border: none; font-size: 28px; box-shadow: 0 6px 18px rgba(67,97,238,0.45); cursor: pointer;
-    z-index: 20; transition: transform 0.1s ease-out;
+    z-index: 20; transition: transform 0.15s ease;
   }
+  .fab:hover { transform: scale(1.06); }
   .fab:active { transform: scale(0.94); }
 
   /* モーダル類は画面下からせり上がるボトムシート形式に統一。ネイティブアプリに近い
@@ -223,10 +227,22 @@
   .sheet-back-btn {
     background: var(--tint); border: none; color: var(--blue-dark); font-size: 14px; font-weight: 700;
     line-height: 1; padding: 9px 14px; border-radius: 20px; cursor: pointer; flex: 0 0 auto;
-    transition: transform 0.1s ease-out;
+    transition: transform 0.15s ease;
     display: flex; align-items: center; gap: 5px;
   }
+  .sheet-back-btn:hover { transform: translateX(-2px); }
   .sheet-back-btn:active { transform: scale(0.94); }
+
+  /* 詳細画面（作品ごとの機材一覧・カテゴリごとの機材一覧）は、開いた瞬間にヘッダーと
+     リストが右からふわっと入ってくる演出を追加する。追加・編集フォームや設定画面には
+     付けない（詳細画面だけの演出にして、使いすぎない）。 */
+  #project-detail-overlay .sheet-header,
+  #equipment-detail-sticky .sheet-header {
+    animation: slideInRight 0.28s ease both;
+  }
+  #project-detail-list, #equipment-detail-list {
+    animation: slideInRight 0.3s ease both;
+  }
   .field { margin-bottom: 14px; }
   .field label { display: block; font-size: 12px; color: var(--sub); font-weight: 600; margin-bottom: 4px; }
   .field input, .field select {
@@ -578,12 +594,13 @@
       return a < b ? 1 : (a > b ? -1 : 0); // 降順（開始日が遅いグループほど上）
     });
 
-    groupOrder.forEach(function (key) {
+    groupOrder.forEach(function (key, index) {
       // 期間表示は、そのグループの先頭（一番上）にある予約の開始日・終了日を使う
       var head = groups[key][0];
       var periodText = (head.startDate && head.endDate) ? '　' + head.startDate + '〜' + head.endDate : '';
       var header = document.createElement('div');
       header.className = 'group-header';
+      header.style.animationDelay = (index * 40) + 'ms';
       header.innerHTML =
         '<span>' + escapeHtml(key) + '（' + groups[key].length + '件）' + escapeHtml(periodText) + '</span>' +
         '<span class="chevron">詳細 ›</span>';
@@ -640,11 +657,13 @@
 
     var listEl = document.getElementById('project-detail-list');
     listEl.innerHTML = '';
-    items.forEach(function (b) {
-      listEl.appendChild(buildBookingCard(b, function (bk) {
+    items.forEach(function (b, index) {
+      var card = buildBookingCard(b, function (bk) {
         closeProjectDetail();
         openEditForm(bk);
-      }));
+      });
+      card.style.animationDelay = (index * 40) + 'ms';
+      listEl.appendChild(card);
     });
 
     document.getElementById('project-detail-overlay').classList.add('show');
@@ -743,10 +762,11 @@
     }
     emptyEl.style.display = 'none';
 
-    visibleGroups.forEach(function (cat) {
+    visibleGroups.forEach(function (cat, index) {
       var names = namesByGroup[cat];
       var header = document.createElement('div');
       header.className = 'group-header';
+      header.style.animationDelay = (index * 40) + 'ms';
       header.innerHTML =
         '<span>' + escapeHtml(cat) + '（' + names.length + '件）</span>' +
         '<span class="chevron">詳細 ›</span>';
@@ -907,6 +927,7 @@
 
       var card = buildEquipmentStatusCard(name, entry);
       card.id = cardId;
+      card.style.animationDelay = (idx * 40) + 'ms';
       listEl.appendChild(card);
 
       var chip = document.createElement('button');
