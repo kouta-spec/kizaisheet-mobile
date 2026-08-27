@@ -450,6 +450,7 @@
       <button class="btn primary" id="settings-save">保存して接続</button>
     </div>
     <button type="button" class="btn-delete" id="settings-disconnect">接続を解除する（この端末の設定・データを削除）</button>
+    <div class="hint" style="text-align:center; margin-top:14px; margin-bottom:0;" id="app-version-hint"></div>
   </div>
 </div>
 
@@ -562,6 +563,12 @@
 (function () {
   'use strict';
 
+  // 【2026/8/27追加】アプリの更新が実際に反映されているか（新しいコードが動いているか）を
+  // 見た目だけで確認できるよう、設定画面の一番下に表示する目印。コードを更新するたびに
+  // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
+  // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
+  // 最新版が反映されていない可能性が高い。
+  var APP_BUILD_VERSION = '2026-08-27d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -847,6 +854,12 @@
   // ---------- 作品の詳細シート ----------
   function openProjectDetail(projectName, items) {
     document.getElementById('project-detail-title').textContent = projectName;
+    // 【2026/8/27追加】このシートは開くたびに中身を作り直しているだけで、スクロール
+    // 位置は前回開いたとき（別の作品を見ていたときなど）のまま残ってしまっていた。
+    // 新しい作品の中身が短いと、その古いスクロール位置のままでは中身がほとんど
+    // 画面外（下）になってしまい、表示が終わるまで空白を見つめることになっていた。
+    // 開くたびに必ず先頭へ戻す。
+    resetProjectDetailScroll_();
 
     var totalPrice = 0, hasPrice = false;
     var minStart = null, maxEnd = null;
@@ -887,6 +900,13 @@
   function hideProjectDetailOverlay_() {
     document.getElementById('project-detail-overlay').classList.remove('show');
   }
+  // 【2026/8/27追加】このシート（.sheet、内部でスクロールする）の位置を先頭に戻す。
+  // 開くたびに呼ぶことで、前回このシートを見ていたときのスクロール位置が
+  // 残ったまま次の中身が表示され、しばらく空白を見つめることになる不具合を防ぐ。
+  function resetProjectDetailScroll_() {
+    var sheetEl = document.querySelector('#project-detail-overlay .sheet');
+    if (sheetEl) sheetEl.scrollTop = 0;
+  }
   function closeProjectDetail() {
     hideProjectDetailOverlay_();
     // 【2026/8/27追加】このシートが機材カレンダー（重複日の予約選択）から
@@ -909,6 +929,7 @@
   // タップしたときに出す一覧シート。「作品詳細」と同じシート（項目カード一覧）を
   // 流用し、どの予約を編集するか選んでもらう。1件を選ぶとその編集フォームが開く。
   function openDayBookingPicker_(equipmentName, dateStr, dayBookings, reopenDetail) {
+    resetProjectDetailScroll_();
     document.getElementById('project-detail-title').textContent = equipmentName + '（' + dateStr + '）';
     document.getElementById('project-detail-summary').textContent =
       '重複している予約が' + dayBookings.length + '件あります。編集する予約を選んでください。';
@@ -2222,6 +2243,9 @@
     this.value = ''; // 同じファイルを選び直しても change が発火するようにリセット
   });
   document.getElementById('bg-clear-btn').addEventListener('click', clearBackgroundImage);
+
+  var versionHintEl = document.getElementById('app-version-hint');
+  if (versionHintEl) versionHintEl.textContent = 'バージョン: ' + APP_BUILD_VERSION;
 
   loadBackgroundImage();
   loadSettings();
