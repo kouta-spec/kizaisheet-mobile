@@ -112,6 +112,15 @@
   #status-banner.info { background: #e8ecfe; color: var(--blue-dark); }
   #status-banner.error { background: #ffe3e8; color: #c81e42; }
   #status-banner.warn { background: #fff2da; color: #a35a00; }
+  /* 【2026/8/27追加】期間重複の警告バナーから、その機材のカレンダーへ直接飛べるボタン */
+  #status-banner .banner-jump-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  #status-banner .banner-jump-btn {
+    border: none; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700;
+    cursor: pointer; background: rgba(255,255,255,0.75); color: inherit;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+  }
+  #status-banner .banner-jump-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.14); }
+  #status-banner .banner-jump-btn:active { transform: scale(0.96); }
 
   @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
@@ -577,10 +586,69 @@
   }
 
   // ---------- 画面表示ヘルパー ----------
-  function showBanner(message, type) {
+  // 【2026/8/27変更】期間重複の警告のときに「その機材のカレンダーを見る」ボタンを
+  // 出せるよう、第3引数jumpNames（機材名の配列）を追加した。省略時は今まで通り
+  // メッセージだけを表示する（他の呼び出し箇所の見た目は変わらない）。
+  function showBanner(message, type, jumpNames) {
     var el = document.getElementById('status-banner');
-    el.textContent = message;
+    el.innerHTML = '';
+    var textEl = document.createElement('div');
+    textEl.textContent = message;
+    el.appendChild(textEl);
+    if (jumpNames && jumpNames.length) {
+      var row = document.createElement('div');
+      row.className = 'banner-jump-row';
+      jumpNames.forEach(function (name) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'banner-jump-btn';
+        btn.textContent = '📅 ' + name + 'のカレンダーを見る';
+        btn.addEventListener('click', function () {
+          hideBanner();
+          jumpToEquipmentCalendar(name);
+        });
+        row.appendChild(btn);
+      });
+      el.appendChild(row);
+    }
     el.className = 'show ' + (type || 'info');
+  }
+
+  // サーバーから返ってくる重複メッセージ（例:「1. 機材名「Aカメラ」…」）から、
+  // 機材名だけを重複なく取り出す。GAS側のbuildOverlapToastMessage_と同じ
+  // 「機材名「◯◯」」というパターンを探す。
+  function extractOverlapEquipmentNames(message) {
+    if (!message) return [];
+    var names = [];
+    var seen = {};
+    var re = /機材名「(.+?)」/g;
+    var m;
+    while ((m = re.exec(message)) !== null) {
+      if (!seen[m[1]]) { seen[m[1]] = true; names.push(m[1]); }
+    }
+    return names;
+  }
+
+  // 【2026/8/27追加】重複警告バナーの「カレンダーを見る」ボタンから呼ばれる。
+  // 機材の状況タブへ切り替えたうえで、その機材が属するカテゴリの詳細シートを開き、
+  // 該当機材のカードまで自動でスクロール＆ハイライトする。
+  // カードのスクロール・光らせる処理自体は、詳細シート内の「ジャンプチップ」
+  // （openEquipmentCategoryDetailが作るショートカットボタン）が既に持っている
+  // ロジックをそのまま再利用する（同じ動きを2箇所に書かないため）。
+  function jumpToEquipmentCalendar(name) {
+    switchView('equipment');
+    var built = buildEquipmentStatusMap();
+    var cat = findCategoryForEquipment(name);
+    var namesInCat = (cat && equipmentByCategory[cat]) ? equipmentByCategory[cat] : built.allNames;
+    openEquipmentCategoryDetail(cat || '全機材', namesInCat, built.byEquipment);
+    setTimeout(function () {
+      var jumpEl = document.getElementById('equipment-detail-jump');
+      var targetChip = null;
+      Array.prototype.forEach.call(jumpEl.children, function (chip) {
+        if (chip.textContent === name) targetChip = chip;
+      });
+      if (targetChip) targetChip.click();
+    }, 50);
   }
   function hideBanner() {
     document.getElementById('status-banner').className = '';
@@ -1611,14 +1679,19 @@
       }
       closeForm();
       if (res.overlap) {
-        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
       } else if (res.warning) {
         showBanner(res.warning, 'warn');
       } else {
         showBanner(res.message || '保存しました。', 'info');
         setTimeout(hideBanner, 4000);
       }
-      refreshBookings();
+      // 【2026/8/27修正】以前はrefreshBookings()を「静かではない」モードで呼んでいたため、
+      // このすぐ上で出した重複警告バナー（カレンダーへ飛ぶボタン付き）が、
+      // 一覧の再取得が終わった瞬間に自動でhideBanner()されて即座に消えてしまう
+      // 不具合があった。保存後の再取得はローディング表示も不要なので、
+      // 静かな（バナーに触れない）モードで呼ぶようにした。
+      refreshBookings(true);
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
@@ -1693,9 +1766,11 @@
       noticeMessages.forEach(function (m) { messages.push(m); });
       errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
       var hasIssue = (noticeMessages.length > 0 || errorMessages.length > 0);
-      showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info');
+      showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(noticeMessages.join('\n')));
       if (!hasIssue) setTimeout(hideBanner, 4000);
-      refreshBookings();
+      // 【2026/8/27修正】上と同じ理由で静かなモードに変更（重複警告バナーが
+      // 一覧の再取得直後に消えてしまう不具合の修正）。
+      refreshBookings(true);
     }
 
     postNext(0);
@@ -1715,14 +1790,15 @@
       }
       closeForm();
       if (res.overlap) {
-        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
       } else if (res.warning) {
         showBanner(res.warning, 'warn');
       } else {
         showBanner(res.message || '予約を削除しました。', 'info');
         setTimeout(hideBanner, 4000);
       }
-      refreshBookings();
+      // 【2026/8/27修正】上と同じ理由で静かなモードに変更。
+      refreshBookings(true);
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
@@ -1741,7 +1817,7 @@
         return;
       }
       if (res.overlap) {
-        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn');
+        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
       } else {
         showBanner(res.message || 'ガントチャートを更新しました。', 'info');
         setTimeout(hideBanner, 4000);
