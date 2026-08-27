@@ -108,7 +108,7 @@
     display: none; margin: 0 14px 10px; padding: 10px 12px; border-radius: 12px;
     font-size: 13px; line-height: 1.5; white-space: pre-wrap;
   }
-  #status-banner.show { display: block; animation: fadeInUp 0.2s ease-out both; }
+  #status-banner.show { display: block; animation: fadeInUp 0.2s ease-out backwards; }
   #status-banner.info { background: #e8ecfe; color: var(--blue-dark); }
   #status-banner.error { background: #ffe3e8; color: #c81e42; }
   #status-banner.warn { background: #fff2da; color: #a35a00; }
@@ -122,9 +122,10 @@
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 2px 8px rgba(67,97,238,0.10);
     border: 1px solid var(--border); border-left: 5px solid var(--blue);
-    animation: fadeInUp 0.35s ease both;
+    animation: fadeInUp 0.35s ease backwards;
     transition: transform 0.1s ease-out, box-shadow 0.15s ease-out;
   }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(67,97,238,0.16); }
   .card:active { transform: scale(0.98); }
   .card.supplier { border-left-color: var(--orange); }
   .card .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -147,7 +148,7 @@
     border-radius: 14px;
     display: flex; justify-content: space-between; align-items: center;
     box-shadow: 0 1px 3px rgba(67,97,238,0.08);
-    animation: fadeInUp 0.35s ease both;
+    animation: fadeInUp 0.35s ease backwards;
     transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
   }
   .group-header:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
@@ -310,8 +311,10 @@
   #equipment-add-btn { margin-bottom: 14px; }
   .selected-eq-row {
     border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 10px;
-    background: var(--tint); animation: fadeInUp 0.25s ease both;
+    background: var(--tint); animation: fadeInUp 0.25s ease backwards;
+    transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
   }
+  .selected-eq-row:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(67,97,238,0.14); }
   .selected-eq-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
   .selected-eq-name { font-size: 14px; font-weight: 700; color: var(--text); }
   .selected-eq-remove {
@@ -406,6 +409,7 @@
       <button class="btn secondary" id="settings-cancel">閉じる</button>
       <button class="btn primary" id="settings-save">保存して接続</button>
     </div>
+    <button type="button" class="btn-delete" id="settings-disconnect">接続を解除する（この端末の設定・データを削除）</button>
   </div>
 </div>
 
@@ -420,6 +424,23 @@
       <label>作品名（機材リストに登録済みの作品名と完全一致させるため選択式）</label>
       <select id="f-project"><option value="">（作品名を読み込み中...）</option></select>
       <input type="text" id="f-project-custom" placeholder="新しい作品名を入力" style="display:none; margin-top:6px;">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>開始日</label>
+        <input type="date" id="f-start">
+      </div>
+      <div class="field">
+        <label>終了日</label>
+        <input type="date" id="f-end">
+      </div>
+    </div>
+    <div class="field">
+      <label>備考</label>
+      <input type="text" id="f-note">
+    </div>
+    <div class="hint" id="multi-date-hint" style="margin-top:-8px;">
+      ↑ここで入力した開始日・終了日・備考は、下で機材を「リストに追加」するときの初期値になります。追加したあとは機材ごとに個別に変更できます。
     </div>
     <div class="field">
       <label>カテゴリで絞り込む（任意）</label>
@@ -442,24 +463,13 @@
     </div>
     <!-- 新規追加時：カテゴリ→機材名を選んで「リストに追加」を押すたびに、下に
          選択済み機材カード（機材ごとの数量・発注先入力）が積み上がっていく。
-         選び終えたら一番下の「保存する」で一括登録する。 -->
+         選び終えたら一番下の「保存する」で一括登録する。
+         （2026/8/26 位置変更：作品名・期間・備考など全機材共通の項目を先に
+         入力してから、機材を選んで追加していく流れにするため、この
+         ボタン・リストは備考欄より下に配置している。） -->
     <div id="multi-equipment-fields">
       <button type="button" class="btn secondary" id="equipment-add-btn" style="width:100%;">＋ この機材をリストに追加</button>
       <div id="selected-equipment-list"></div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>開始日</label>
-        <input type="date" id="f-start">
-      </div>
-      <div class="field">
-        <label>終了日</label>
-        <input type="date" id="f-end">
-      </div>
-    </div>
-    <div class="field">
-      <label>備考</label>
-      <input type="text" id="f-note">
     </div>
     <div class="form-error" id="form-error"></div>
     <div class="sheet-actions">
@@ -1298,6 +1308,7 @@
     // 新規追加は「カテゴリ→機材名を選ぶ→リストに追加」を繰り返す複数選択式にする。
     document.getElementById('single-equipment-fields').style.display = 'none';
     document.getElementById('multi-equipment-fields').style.display = 'block';
+    document.getElementById('multi-date-hint').style.display = 'block';
     selectedEquipmentRows = [];
     renderSelectedEquipmentList();
     document.getElementById('form-delete').style.display = 'none';
@@ -1314,10 +1325,10 @@
     var cat = findCategoryForEquipment(equipmentName);
     document.getElementById('f-category').value = cat;
     populateEquipmentSelect(cat, equipmentName);
-    selectedEquipmentRows = [{ equipment: equipmentName, quantity: '', supplier: '' }];
-    renderSelectedEquipmentList();
     document.getElementById('f-start').value = toDateInputValue(dateStr);
     document.getElementById('f-end').value = toDateInputValue(dateStr);
+    selectedEquipmentRows = [{ equipment: equipmentName, quantity: '', supplier: '', startDate: dateStr, endDate: dateStr, note: '' }];
+    renderSelectedEquipmentList();
   }
 
   function openEditForm(b) {
@@ -1326,6 +1337,7 @@
     // 編集は既存の1件のみを扱うため、機材は単一選択（数量・発注先を直接入力）に戻す。
     document.getElementById('single-equipment-fields').style.display = 'flex';
     document.getElementById('multi-equipment-fields').style.display = 'none';
+    document.getElementById('multi-date-hint').style.display = 'none';
     populateProjectSelect(b.project || '');
     var cat = findCategoryForEquipment(b.equipment);
     document.getElementById('f-category').value = cat;
@@ -1342,7 +1354,9 @@
 
   // ---------- 機材の複数選択（新規追加フォーム用） ----------
   // カテゴリ→機材名のプルダウンで選んだ機材を「リストに追加」ボタンで選択済みリストへ
-  // 積み上げていく。同じ機材を二重に追加はさせず、数量・発注先は機材ごとに個別入力する。
+  // 積み上げていく。同じ機材を二重に追加はさせず、数量・発注先・開始日・終了日・備考は
+  // 機材ごとに個別入力する（開始日・終了日・備考は、追加した瞬間はフォーム上部に
+  // 入力済みの内容をコピーした初期値になり、そのあとリスト側で個別に編集できる）。
   function addSelectedEquipment() {
     var equipment = document.getElementById('f-equipment').value.trim();
     if (!equipment) { showFormError('機材名を選択してください'); return; }
@@ -1356,7 +1370,17 @@
       return;
     }
     hideFormError();
-    selectedEquipmentRows.push({ equipment: equipment, quantity: '', supplier: '' });
+    var defaultStart = fromDateInputValue(document.getElementById('f-start').value);
+    var defaultEnd = fromDateInputValue(document.getElementById('f-end').value);
+    var defaultNote = document.getElementById('f-note').value.trim();
+    selectedEquipmentRows.push({
+      equipment: equipment,
+      quantity: '',
+      supplier: '',
+      startDate: defaultStart,
+      endDate: defaultEnd,
+      note: defaultNote
+    });
     renderSelectedEquipmentList();
     // 次の機材を選びやすいよう、機材名の選択だけ空欄に戻す（カテゴリ絞り込みは維持）。
     populateEquipmentSelect(document.getElementById('f-category').value, '');
@@ -1447,6 +1471,56 @@
       row2.appendChild(supField);
       box.appendChild(row2);
 
+      // 期間（機材ごとに個別編集できる。追加した直後はフォーム上部の値がコピーされている）
+      var dateRow = document.createElement('div');
+      dateRow.className = 'field-row';
+
+      var startField = document.createElement('div');
+      startField.className = 'field';
+      var startLabel = document.createElement('label');
+      startLabel.textContent = '開始日';
+      var startInput = document.createElement('input');
+      startInput.type = 'date';
+      startInput.value = toDateInputValue(row.startDate);
+      startInput.addEventListener('change', function () {
+        selectedEquipmentRows[idx].startDate = fromDateInputValue(startInput.value);
+      });
+      startField.appendChild(startLabel);
+      startField.appendChild(startInput);
+
+      var endField = document.createElement('div');
+      endField.className = 'field';
+      var endLabel = document.createElement('label');
+      endLabel.textContent = '終了日';
+      var endInput = document.createElement('input');
+      endInput.type = 'date';
+      endInput.value = toDateInputValue(row.endDate);
+      endInput.addEventListener('change', function () {
+        selectedEquipmentRows[idx].endDate = fromDateInputValue(endInput.value);
+      });
+      endField.appendChild(endLabel);
+      endField.appendChild(endInput);
+
+      dateRow.appendChild(startField);
+      dateRow.appendChild(endField);
+      box.appendChild(dateRow);
+
+      // 備考（機材ごとに個別編集できる）
+      var noteField = document.createElement('div');
+      noteField.className = 'field';
+      noteField.style.marginBottom = '0';
+      var noteLabel = document.createElement('label');
+      noteLabel.textContent = '備考';
+      var noteInput = document.createElement('input');
+      noteInput.type = 'text';
+      noteInput.value = row.note || '';
+      noteInput.addEventListener('input', function () {
+        selectedEquipmentRows[idx].note = noteInput.value;
+      });
+      noteField.appendChild(noteLabel);
+      noteField.appendChild(noteInput);
+      box.appendChild(noteField);
+
       listEl.appendChild(box);
     });
   }
@@ -1477,9 +1551,6 @@
     var project = (projectSel === PROJECT_CUSTOM_VALUE)
       ? document.getElementById('f-project-custom').value.trim()
       : projectSel;
-    var start = fromDateInputValue(document.getElementById('f-start').value);
-    var end = fromDateInputValue(document.getElementById('f-end').value);
-    var note = document.getElementById('f-note').value.trim();
 
     hideFormError();
     if (projectSel === PROJECT_CUSTOM_VALUE && !project) {
@@ -1487,12 +1558,19 @@
       return;
     }
     if (!project) { showFormError('作品名を選択してください'); return; }
-    if (!start || !end) { showFormError('開始日・終了日を入力してください'); return; }
 
     if (editingRow) {
+      // 編集は既存の1件のみを扱うので、フォーム上部の開始日・終了日・備考がそのまま
+      // 更新対象の値になる（新規追加のように機材ごとに個別化はしない）。
+      var start = fromDateInputValue(document.getElementById('f-start').value);
+      var end = fromDateInputValue(document.getElementById('f-end').value);
+      var note = document.getElementById('f-note').value.trim();
+      if (!start || !end) { showFormError('開始日・終了日を入力してください'); return; }
       submitSingleEditBooking(project, start, end, note);
     } else {
-      submitMultiAddBooking(project, start, end, note);
+      // 新規追加は、開始日・終了日・備考を機材ごとに個別に持っているので、
+      // フォーム上部の値ではなく選択済みリストの各行の値をそのまま使う。
+      submitMultiAddBooking(project);
     }
   }
 
@@ -1545,16 +1623,20 @@
 
   // 新規追加は、選択済みリストの機材の件数ぶんだけ、1件ずつ順番に登録APIを呼び出す
   // （スプレッドシートへの書き込みが同時に重ならないよう、あえて並行にはしない）。
-  // 作品名・開始日・終了日・備考は全機材で共通、数量・発注先は機材ごとの値を使う。
-  function submitMultiAddBooking(project, start, end, note) {
+  // 作品名は全機材で共通、数量・発注先・開始日・終了日・備考は機材ごとの値を使う。
+  function submitMultiAddBooking(project) {
     if (selectedEquipmentRows.length === 0) {
       showFormError('機材を1つ以上リストに追加してください');
       return;
     }
     for (var i = 0; i < selectedEquipmentRows.length; i++) {
-      var eq = selectedEquipmentRows[i].equipment;
-      if (equipmentList.length > 0 && equipmentList.indexOf(eq) === -1) {
-        showFormError('「' + eq + '」がマスターガントチャートの一覧と一致しません。選び直してください。');
+      var row0 = selectedEquipmentRows[i];
+      if (equipmentList.length > 0 && equipmentList.indexOf(row0.equipment) === -1) {
+        showFormError('「' + row0.equipment + '」がマスターガントチャートの一覧と一致しません。選び直してください。');
+        return;
+      }
+      if (!row0.startDate || !row0.endDate) {
+        showFormError('「' + row0.equipment + '」の開始日・終了日を入力してください。');
         return;
       }
     }
@@ -1574,9 +1656,9 @@
         equipment: row.equipment,
         quantity: row.quantity ? Number(row.quantity) : undefined,
         supplier: row.supplier,
-        startDate: start,
-        endDate: end,
-        note: note
+        startDate: row.startDate,
+        endDate: row.endDate,
+        note: row.note || ''
       };
       apiPost(body).then(function (res) {
         if (res.ok) {
@@ -1677,6 +1759,36 @@
   function closeSettings() {
     if (!hasSettings()) return; // 未設定の状態では閉じさせない（データが読み込めないため）
     document.getElementById('settings-overlay').classList.remove('show');
+  }
+
+  // 共有端末で使ったあとなどに、この端末に保存されているURL・合言葉・データキャッシュを
+  // まとめて消して「未接続」の状態に戻す。背景画像（個人の好みの設定）はここでは消さない。
+  function disconnectSettings() {
+    var ok = window.confirm('接続を解除します。この端末に保存されているWebアプリのURL・合言葉と、予約・機材データのキャッシュを削除します。よろしいですか？');
+    if (!ok) return;
+
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* 無視 */ }
+    try { localStorage.removeItem('kizai_mobile_bookings_cache_v1'); } catch (e) { /* 無視 */ }
+    try { localStorage.removeItem('kizai_equipment_cache_v1'); } catch (e) { /* 無視 */ }
+    try { localStorage.removeItem('kizai_category_cache_v1'); } catch (e) { /* 無視 */ }
+    try { localStorage.removeItem('kizai_mobile_supplier_cache_v1'); } catch (e) { /* 無視 */ }
+    try { localStorage.removeItem('kizai_mobile_project_cache_v1'); } catch (e) { /* 無視 */ }
+
+    settings = { url: '', token: '' };
+    bookings = [];
+    equipmentList = [];
+    equipmentByCategory = {};
+    categoryOrder = [];
+    supplierList = [];
+    projectList = [];
+    dataLoaded = { equipment: false, bookings: false };
+
+    document.getElementById('settings-url').value = '';
+    document.getElementById('settings-token').value = '';
+    document.getElementById('settings-error').classList.remove('show');
+    renderCurrentView();
+    // hasSettings()がfalseになるため、設定シートはこのまま開いたまま
+    // （closeSettingsが「未設定なら閉じさせない」ため、自然と入力を促す状態になる）。
   }
 
   // ---------- 背景画像（お好みの写真を壁紙として設定） ----------
@@ -1801,6 +1913,7 @@
   document.getElementById('settings-btn').addEventListener('click', openSettings);
   document.getElementById('settings-cancel').addEventListener('click', closeSettings);
   document.getElementById('settings-save').addEventListener('click', saveSettingsAndConnect);
+  document.getElementById('settings-disconnect').addEventListener('click', disconnectSettings);
   document.getElementById('add-fab').addEventListener('click', openAddForm);
   document.getElementById('form-cancel').addEventListener('click', closeForm);
   document.getElementById('form-save').addEventListener('click', submitForm);
