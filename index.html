@@ -866,11 +866,15 @@
         return escapeHtml(b.project || '（作品名未入力）') + '　〜' + escapeHtml(b.endDate) + 'まで';
       }).join('<br>');
     } else if (entry.upcoming.length) {
-      var next = entry.upcoming[0];
       badgeHtml = '<span class="status-badge upcoming">予約あり</span>';
-      detailHtml = escapeHtml(next.startDate) + '〜' + escapeHtml(next.endDate) + '　' +
-        escapeHtml(next.project || '（作品名未入力）') +
-        (entry.upcoming.length > 1 ? '　他' + (entry.upcoming.length - 1) + '件' : '');
+      // 【2026/8/27修正】以前は最初の1件だけを表示し、残りは「他◯件」とまとめて
+      // しまっていたため、2件目以降の作品名が画面から見えなかった。
+      // 予約が入っている作品名を全件、使用中（entry.current）と同じ見せ方で
+      // 1行ずつ表示するように変更した。
+      detailHtml = entry.upcoming.map(function (b) {
+        return escapeHtml(b.startDate) + '〜' + escapeHtml(b.endDate) + '　' +
+          escapeHtml(b.project || '（作品名未入力）');
+      }).join('<br>');
     } else {
       badgeHtml = '<span class="status-badge free">空き</span>';
       detailHtml = '直近の予定はありません';
