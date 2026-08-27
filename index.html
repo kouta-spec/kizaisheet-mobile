@@ -585,7 +585,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-27f';
+  var APP_BUILD_VERSION = '2026-08-27g';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2006,8 +2006,30 @@
 
   function deleteCurrentBooking() {
     if (!editingRow) return;
-    var ok = window.confirm('この予約を削除します。よろしいですか？\n（この操作は取り消せません）');
+    var ok = window.confirm('この予約を削除します。よろしいですか？\n（削除した直後は「元に戻す」で復元できます）');
     if (!ok) return;
+
+    // 【2026/8/27追加】誤って削除してしまったときにその場で気づいて直せるよう、
+    // 削除する前にフォームに表示されている内容を控えておく。「元に戻す」は
+    // 「まったく同じ内容でもう一度予約を追加する」だけで実現する（専用のAPIを
+    // 新設する必要がないので、GAS側の再デプロイなしでこの機能を使える）。
+    // 行番号までは元の場所に戻せない（一覧の並び順が少し変わることがある）が、
+    // 作品名・機材名・数量・発注先・期間・備考の内容はまったく同じ予約として復活する。
+    var restoreBody = {
+      action: 'addBooking',
+      project: (document.getElementById('f-project').value === PROJECT_CUSTOM_VALUE)
+        ? document.getElementById('f-project-custom').value.trim()
+        : document.getElementById('f-project').value,
+      equipment: document.getElementById('f-equipment').value.trim(),
+      quantity: (function () {
+        var q = document.getElementById('f-quantity').value.trim();
+        return q ? Number(q) : undefined;
+      })(),
+      supplier: document.getElementById('f-supplier').value,
+      startDate: fromDateInputValue(document.getElementById('f-start').value),
+      endDate: fromDateInputValue(document.getElementById('f-end').value),
+      note: document.getElementById('f-note').value.trim()
+    };
 
     showLoading('削除中...');
     apiPost({ action: 'deleteBooking', row: editingRow }).then(function (res) {
@@ -2017,19 +2039,72 @@
         return;
       }
       closeForm();
-      if (res.overlap) {
-        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
-      } else if (res.warning) {
-        showBanner(res.warning, 'warn');
-      } else {
-        showBanner(res.message || '予約を削除しました。', 'info');
-        setTimeout(hideBanner, 4000);
-      }
       // 【2026/8/27修正】上と同じ理由で静かなモードに変更。
       refreshBookings(true);
+      showUndoDeleteBanner_(restoreBody, res.message || '予約を削除しました。');
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
+    });
+  }
+
+  // 【2026/8/27追加】削除した直後だけ表示する「元に戻す」バナー。誤って削除して
+  // しまった（例：他のチームの機材を間違えて消してしまった）ときに、その場ですぐ
+  // 気づいて直せるようにするための簡易的なやり直し機能。時間が経って気づいた
+  // 場合はこのバナーではもう戻せないため、その場合はスプレッドシートの
+  // 「ファイル→版履歴」から確認してもらう必要がある（設定画面の説明文にも案内あり）。
+  var UNDO_DELETE_SECONDS = 12;
+  function showUndoDeleteBanner_(restoreBody, baseMessage) {
+    var el = document.getElementById('status-banner');
+    el.innerHTML = '';
+
+    var textEl = document.createElement('div');
+    textEl.textContent = baseMessage;
+    el.appendChild(textEl);
+
+    var row = document.createElement('div');
+    row.className = 'banner-jump-row';
+    var undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'banner-jump-btn';
+    row.appendChild(undoBtn);
+    el.appendChild(row);
+
+    el.className = 'show warn';
+
+    var remaining = UNDO_DELETE_SECONDS;
+    function updateLabel() { undoBtn.textContent = '↩️ 元に戻す（残り' + remaining + '秒）'; }
+    updateLabel();
+    var countdownTimer = setInterval(function () {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(countdownTimer);
+        // 他の操作で既に別のバナー内容に変わっている場合は消さない。
+        if (document.getElementById('status-banner').contains(undoBtn)) hideBanner();
+        return;
+      }
+      updateLabel();
+    }, 1000);
+
+    undoBtn.addEventListener('click', function () {
+      clearInterval(countdownTimer);
+      undoBtn.disabled = true;
+      undoBtn.textContent = '復元中...';
+      apiPost(restoreBody).then(function (res) {
+        if (!res.ok) {
+          showBanner('復元に失敗しました: ' + (res.error || '') + '\n\n作品名・機材名などを確認のうえ、手動で追加し直してください。', 'error');
+          return;
+        }
+        refreshBookings(true);
+        if (res.overlap) {
+          showBanner('元に戻しました。\n\n' + (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
+        } else {
+          showBanner('元に戻しました。', 'info');
+          setTimeout(hideBanner, 4000);
+        }
+      }).catch(function (err) {
+        showBanner('通信エラー: ' + err.message, 'error');
+      });
     });
   }
 
