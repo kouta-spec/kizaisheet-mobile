@@ -43,10 +43,16 @@
      スクロールすると途中で少し広がる」ように見えていた。
      htmlの背景はCSS上「キャンバス背景」として扱われ、position: fixedな要素とは異なり
      ビューポート全体を常に覆うよう特別に描画されるため、この問題が起きない。
-     そのため画像はhtmlの背景として直接敷き、#bg-layerは廃止する。 */
+     そのため画像はhtmlの背景として直接敷き、#bg-layerは廃止する。
+     【2026/8/27再修正】background-attachmentの指定を入れ忘れていたため、キャンバス背景が
+     画面（ビューポート）ではなく「ページ全体（スクロールする中身をすべて含めた高さ）」を
+     基準にcoverで拡大されてしまい、画像が縦に間延びしたように見え、スクロールすると
+     見えている範囲も変わってしまっていた。background-attachment: fixedを指定して、
+     以前の#bg-layer（常に画面ぴったりの大きさ）と同じ見え方に戻す。 */
   html {
     background-color: var(--bg);
     background-size: cover; background-position: center; background-repeat: no-repeat;
+    background-attachment: fixed;
   }
   /* bodyには背景を付けない：付けてしまうと、bodyの実際の高さ（＝中身の高さ）ぶんだけ
      不透明な板としてhtmlの背景（壁紙）の上に乗ってしまい、コンテンツが
@@ -579,7 +585,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-27e';
+  var APP_BUILD_VERSION = '2026-08-27f';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
