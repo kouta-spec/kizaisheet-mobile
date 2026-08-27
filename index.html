@@ -34,21 +34,28 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
-  html { background: var(--bg); }
+  /* 【2026/8/27修正】以前は背景画像を#bg-layer（position: fixed; inset: 0;の専用div）に
+     敷いていたが、iPhoneのSafari/Chromeはスクロールに応じてアドレスバーが隠れたり
+     出たりするたびに「レイアウトビューポート」の高さが変わり、position: fixedな
+     要素の箱の大きさもそれに合わせて変化する。background-size: coverはその箱の大きさを
+     基準に画像の見せる範囲を決めるため、スクロール中に箱の高さが変わるたびに壁紙の
+     見え方（どこが切り取られるか）が変わってしまい、「上部では少しクロップされ、
+     スクロールすると途中で少し広がる」ように見えていた。
+     htmlの背景はCSS上「キャンバス背景」として扱われ、position: fixedな要素とは異なり
+     ビューポート全体を常に覆うよう特別に描画されるため、この問題が起きない。
+     そのため画像はhtmlの背景として直接敷き、#bg-layerは廃止する。 */
+  html {
+    background-color: var(--bg);
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+  }
   /* bodyには背景を付けない：付けてしまうと、bodyの実際の高さ（＝中身の高さ）ぶんだけ
-     不透明な板として#bg-layer（背景画像レイヤー）の上に乗ってしまい、コンテンツが
-     ある範囲では壁紙が一切透けなくなる（htmlのbackgroundはCSS上「キャンバス背景」
-     として扱われ描画順が特別なので、この問題は起きない）。 */
+     不透明な板としてhtmlの背景（壁紙）の上に乗ってしまい、コンテンツが
+     ある範囲では壁紙が一切透けなくなる。 */
   body { background: transparent; }
   #app { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
   /* ユーザーが設定画面から任意の背景画像を選ぶと、ここに画面全体を覆う形で敷かれる。
      画像が未設定の間は単なる白背景（--bg）のまま。カード・タブ・シートは半透明＋
      ぼかし（backdrop-filter）にしてあるので、画像を設定すると壁紙のように透けて見える。 */
-  #bg-layer {
-    position: fixed; inset: 0; z-index: -1;
-    background-color: var(--bg);
-    background-size: cover; background-position: center; background-repeat: no-repeat;
-  }
   header {
     background: linear-gradient(135deg, var(--blue-deep), var(--blue)); color: white;
     padding: calc(env(safe-area-inset-top) + 14px) 18px 18px;
@@ -319,7 +326,12 @@
     outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(67,97,238,0.15);
   }
   .field-row { display: flex; gap: 10px; }
-  .field-row .field { flex: 1; }
+  /* 【2026/8/27追加】終了日など<input type="date">はブラウザ標準の表示に必要な
+     最小幅（intrinsic width）を持っており、flexアイテムはデフォルトで
+     min-width: autoのためその最小幅より縮まない。結果、.field-rowの幅に
+     収まりきらず右側の項目（終了日）が画面の外にはみ出すことがあった。
+     min-width: 0を指定して、flexの幅に合わせてきちんと縮められるようにする。 */
+  .field-row .field { flex: 1; min-width: 0; }
   .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
   .btn {
     flex: 1; padding: 13px; border-radius: 999px; border: none; font-size: 15px; font-weight: 700;
@@ -385,7 +397,6 @@
 </style>
 </head>
 <body>
-<div id="bg-layer"></div>
 <div id="app">
   <header>
     <h1>機材シート2026</h1>
@@ -568,7 +579,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-27d';
+  var APP_BUILD_VERSION = '2026-08-27e';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -825,7 +836,8 @@
     });
   }
 
-  function buildBookingCard(b, onClick) {
+  function buildBookingCard(b, onClick, opts) {
+    opts = opts || {};
     var card = document.createElement('div');
     card.className = 'card' + (b.supplier ? ' supplier' : '');
 
@@ -838,11 +850,21 @@
     if (b.supplier) badgesHtml += '<span class="badge supplier">発注先: ' + escapeHtml(b.supplier) + '</span>';
     if (b.returnCheck === '返却済み') badgesHtml += '<span class="badge returned">返却済み</span>';
 
+    // 【2026/8/27追加】重複日の予約選択一覧など、並んでいるカードの機材名が
+    // すべて同じになる場面では、機材名を主表示にしても見分けがつかない。
+    // opts.emphasizeProjectを立てると、主表示を作品名に、機材名は補足の
+    // 小さな行として表示する（どちらを直しているか一目で分かるようにする）。
+    var titleText = opts.emphasizeProject ? (b.project || '（作品名未入力）') : b.equipment;
+    var subLineHtml = opts.emphasizeProject
+      ? '<div class="project">機材: ' + escapeHtml(b.equipment) + '</div>'
+      : '';
+
     card.innerHTML =
       '<div class="row1">' +
-        '<div class="equipment">' + escapeHtml(b.equipment) + '</div>' +
+        '<div class="equipment">' + escapeHtml(titleText) + '</div>' +
         '<div class="price">' + escapeHtml(priceText) + '</div>' +
       '</div>' +
+      subLineHtml +
       '<div class="period">' + escapeHtml(b.startDate || '?') + ' 〜 ' + escapeHtml(b.endDate || '?') +
         (b.quantity ? '　数量: ' + escapeHtml(String(b.quantity)) : '') + '</div>' +
       (badgesHtml ? '<div class="badges">' + badgesHtml + '</div>' : '');
@@ -942,7 +964,7 @@
         formReturnAction = function () { openDayBookingPicker_(equipmentName, dateStr, dayBookings, reopenDetail); };
         hideProjectDetailOverlay_();
         openEditForm(bk);
-      });
+      }, { emphasizeProject: true });
       card.style.animationDelay = (index * 40) + 'ms';
       listEl.appendChild(card);
     });
@@ -1284,15 +1306,25 @@
       chip.addEventListener('click', function () {
         var target = document.getElementById(cardId);
         if (!target) return;
-        // 固定表示中のヘッダー（← 戻る の行）の高さぶん、余分にずらしてスクロールする。
-        // そうしないと、カードの上端がヘッダーの裏に隠れてしまう。
-        var container = document.getElementById('equipment-detail-scroll');
-        var sticky = document.getElementById('equipment-detail-sticky');
-        var stickyHeight = sticky ? sticky.offsetHeight : 0;
-        var targetTop = target.offsetTop - stickyHeight - 10;
-        container.scrollTo({ top: Math.max(targetTop, 0), behavior: 'smooth' });
-        target.classList.add('flash');
-        setTimeout(function () { target.classList.remove('flash'); }, 900);
+        // 【2026/8/27修正】以前はtarget.offsetTop（レイアウト上の位置）を使っていたが、
+        // offsetTopは「最も近い position指定ありの祖先要素」からの相対値で、祖先の
+        // 構造やアニメーションのタイミングによっては期待通りの基準からずれることが
+        // あり、「先頭にちゃんと表示されないことがある」原因になっていた。
+        // getBoundingClientRect()は実際の画面上の位置をそのまま返すため、祖先要素の
+        // position指定に左右されず確実。次のフレームで計算することで、直前の
+        // レイアウト変化（開閉アニメーションなど）が確定した後の正しい位置を使う。
+        requestAnimationFrame(function () {
+          var container = document.getElementById('equipment-detail-scroll');
+          var sticky = document.getElementById('equipment-detail-sticky');
+          var stickyHeight = sticky ? sticky.getBoundingClientRect().height : 0;
+          var containerRect = container.getBoundingClientRect();
+          var targetRect = target.getBoundingClientRect();
+          var currentTop = (targetRect.top - containerRect.top) + container.scrollTop;
+          var targetTop = currentTop - stickyHeight - 10;
+          container.scrollTo({ top: Math.max(targetTop, 0), behavior: 'smooth' });
+          target.classList.add('flash');
+          setTimeout(function () { target.classList.remove('flash'); }, 900);
+        });
       });
       jumpEl.appendChild(chip);
     });
@@ -1591,6 +1623,9 @@
     document.getElementById('f-end').value = toDateInputValue(b.endDate);
     document.getElementById('f-note').value = b.note || '';
     document.getElementById('form-delete').style.display = 'block';
+    // 編集（単一）フォームはselectedEquipmentRowsを使わないため、複数選択フォーム側の
+    // 「未追加なら保存不可」状態が残ったままにならないよう、必ず押せる状態に戻す。
+    updateFormSaveButtonState();
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -1654,9 +1689,21 @@
     return sel;
   }
 
+  // 【2026/8/27追加】新規追加（複数選択）フォームでは、「＋この機材をリストに追加」を
+  // 一度も押していない＝selectedEquipmentRowsが空の状態で「保存する」を押せてしまうと、
+  // エラーメッセージが出るだけで何も保存されず分かりにくい。そこで、複数選択フォームが
+  // 表示されている間は、リストが空の間は保存ボタン自体を押せなくしておく。
+  // 編集（単一）フォームではselectedEquipmentRowsを使わないため、常に押せる状態にする。
+  function updateFormSaveButtonState() {
+    var saveBtn = document.getElementById('form-save');
+    var multiVisible = document.getElementById('multi-equipment-fields').style.display !== 'none';
+    saveBtn.disabled = multiVisible && selectedEquipmentRows.length === 0;
+  }
+
   function renderSelectedEquipmentList() {
     var listEl = document.getElementById('selected-equipment-list');
     listEl.innerHTML = '';
+    updateFormSaveButtonState();
     if (selectedEquipmentRows.length === 0) {
       var empty = document.createElement('div');
       empty.className = 'selected-eq-empty';
@@ -2062,7 +2109,9 @@
   }
 
   function applyBackgroundImage(dataUrl) {
-    document.getElementById('bg-layer').style.backgroundImage = "url('" + dataUrl + "')";
+    // 【2026/8/27修正】専用div（#bg-layer、position: fixed）ではなく、htmlの背景
+    // として直接敷く。理由はCSS側（html { ... }の直前）のコメントを参照。
+    document.documentElement.style.backgroundImage = "url('" + dataUrl + "')";
   }
 
   function updateBgSettingsUi() {
@@ -2082,7 +2131,7 @@
   }
 
   function clearBackgroundImage() {
-    document.getElementById('bg-layer').style.backgroundImage = 'none';
+    document.documentElement.style.backgroundImage = 'none';
     try { localStorage.removeItem(BG_STORAGE_KEY); } catch (e) { /* 無視 */ }
     updateBgSettingsUi();
   }

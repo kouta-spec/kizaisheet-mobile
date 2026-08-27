@@ -4,7 +4,7 @@
 // データそのもの（予約一覧など）は毎回ネットワークから取得する
 // （キャッシュを見せてしまうと古いデータに気づけなくなるため）。
 
-const CACHE_NAME = 'kizai-mobile-v3';
+const CACHE_NAME = 'kizai-mobile-v4';
 const APP_SHELL = [
   './',
   './index.html',
