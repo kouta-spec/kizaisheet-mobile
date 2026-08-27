@@ -60,6 +60,25 @@
     grid-column: 2; justify-self: center; text-align: center;
     font-size: 18px; margin: 0; font-weight: 800; letter-spacing: 0.2px;
   }
+  /* 【2026/8/27追加】通信中であることをアプリ全体で分かりやすくするための
+     小さな回転スピナー。ヘッダー左側は「裏側で静かに通信中」のとき用、
+     .inline-spinnerは一覧の空表示など各所で使い回す。 */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #sync-indicator {
+    grid-column: 1; justify-self: start;
+    display: none;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  #sync-indicator.show { display: block; }
+  .inline-spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(67,97,238,0.22); border-top-color: var(--blue);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: -2px; margin-right: 6px;
+  }
   header button.icon-btn {
     grid-column: 3; justify-self: end;
     background: rgba(255,255,255,0.18); border: none; color: white; font-size: 18px;
@@ -358,6 +377,7 @@
 <div id="bg-layer"></div>
 <div id="app">
   <header>
+    <span id="sync-indicator" title="データを同期中..."></span>
     <h1>機材シート2026</h1>
     <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
   </header>
@@ -453,11 +473,11 @@
     </div>
     <div class="field">
       <label>カテゴリで絞り込む（任意）</label>
-      <select id="f-category"><option value="">すべて表示</option></select>
+      <select id="f-category"><option value="">（読み込み中...）</option></select>
     </div>
     <div class="field">
       <label>機材名（マスターガントチャートの一覧から選択）</label>
-      <select id="f-equipment"><option value="">（機材を選択）</option></select>
+      <select id="f-equipment"><option value="">（読み込み中...）</option></select>
     </div>
     <!-- 編集時（既存の1件のみ）はここで数量・発注先を直接入力 -->
     <div id="single-equipment-fields" class="field-row">
@@ -564,6 +584,22 @@
   }
 
   // ---------- API呼び出し ----------
+  // 【2026/8/27追加】通信中はヘッダー左上に小さなスピナーを出す（アプリ全体共通）。
+  // 同時に複数の通信が走ることがあるため、件数をカウントして0になったら消す。
+  var pendingSyncCount = 0;
+  function beginSync() {
+    pendingSyncCount++;
+    var el = document.getElementById('sync-indicator');
+    if (el) el.classList.add('show');
+  }
+  function endSync() {
+    pendingSyncCount = Math.max(0, pendingSyncCount - 1);
+    if (pendingSyncCount === 0) {
+      var el = document.getElementById('sync-indicator');
+      if (el) el.classList.remove('show');
+    }
+  }
+
   function apiGet(action, extraParams) {
     var url = settings.url + '?action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(settings.token);
     if (extraParams) {
@@ -571,18 +607,20 @@
         url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(extraParams[k]);
       });
     }
-    return fetch(url).then(function (res) { return res.json(); });
+    beginSync();
+    return fetch(url).then(function (res) { return res.json(); }).finally(endSync);
   }
 
   function apiPost(body) {
     body.token = settings.token;
     // 【重要】Content-Typeをtext/plainにすることで、ブラウザのCORSプリフライトを回避する
     // （Apps ScriptのWeb Appはプリフライト(OPTIONS)に対応していないため）
+    beginSync();
     return fetch(settings.url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body)
-    }).then(function (res) { return res.json(); });
+    }).then(function (res) { return res.json(); }).finally(endSync);
   }
 
   // ---------- 画面表示ヘルパー ----------
@@ -680,6 +718,17 @@
     }
   }
 
+  // 【2026/8/27追加】一覧が空のとき、「まだデータを読み込めていないだけ」なのか
+  // 「本当に0件」なのかが見た目で分かるよう、読み込み中はスピナー付きの表示にする。
+  function renderEmptyState(el, loaded, message) {
+    if (loaded) {
+      el.textContent = message;
+    } else {
+      el.innerHTML = '<span class="inline-spinner"></span>読み込み中...';
+    }
+    el.style.display = 'block';
+  }
+
   function todayStr() {
     return formatDateStr(new Date());
   }
@@ -704,8 +753,7 @@
     });
 
     if (filtered.length === 0) {
-      emptyEl.textContent = dataLoaded.bookings ? '予約データがありません' : '読み込み中...';
-      emptyEl.style.display = 'block';
+      renderEmptyState(emptyEl, dataLoaded.bookings, '予約データがありません');
       return;
     }
     emptyEl.style.display = 'none';
@@ -899,8 +947,7 @@
     });
 
     if (visibleGroups.length === 0) {
-      emptyEl.textContent = dataLoaded.equipment ? '該当する機材がありません' : '読み込み中...';
-      emptyEl.style.display = 'block';
+      renderEmptyState(emptyEl, dataLoaded.equipment, '該当する機材がありません');
       return;
     }
     emptyEl.style.display = 'none';
@@ -1135,17 +1182,9 @@
     });
   }
 
-  function refreshEquipmentList() {
-    return apiGet('equipment').then(function (res) {
-      if (res.ok) {
-        equipmentList = res.equipment;
-        dataLoaded.equipment = true;
-        try { localStorage.setItem('kizai_equipment_cache_v1', JSON.stringify(equipmentList)); } catch (e) {}
-        renderCurrentView();
-      }
-    }).catch(function () { /* 機材一覧が取れなくても致命的ではない（前回キャッシュを使う） */ });
-  }
-
+  // 【2026/8/27変更】機材一覧単体の通信（refreshEquipmentList）は、起動時の
+  // まとめ取得（refreshAllData/initData）に統合したため削除した。前回データの
+  // キャッシュ読み込み（loadCachedEquipmentList）だけはそのまま残している。
   function loadCachedEquipmentList() {
     try {
       var raw = localStorage.getItem('kizai_equipment_cache_v1');
@@ -1154,15 +1193,8 @@
   }
 
   // ---------- カテゴリ別の機材一覧（予約フォームの絞り込み用） ----------
-  function refreshEquipmentCategories() {
-    return apiGet('equipmentByCategory').then(function (res) {
-      if (res.ok) {
-        setEquipmentCategories(res.categories);
-        try { localStorage.setItem('kizai_category_cache_v1', JSON.stringify(res.categories)); } catch (e) {}
-      }
-    }).catch(function () { /* 取得できなくても致命的ではない（前回キャッシュを使う） */ });
-  }
-
+  // 【2026/8/27変更】単体の通信（refreshEquipmentCategories）は起動時のまとめ取得に
+  // 統合したため削除した。前回データのキャッシュ読み込みだけ残している。
   function loadCachedEquipmentCategories() {
     try {
       var raw = localStorage.getItem('kizai_category_cache_v1');
@@ -1173,15 +1205,8 @@
   // ---------- 発注先の一覧（予約フォームのプルダウン用） ----------
   // 機材リストのF列（発注先）に設定されているプルダウン（データ入力規則）の
   // 選択肢をそのまま使う。手入力だと表記ゆれが起きやすいため。
-  function refreshSupplierList() {
-    return apiGet('supplierList').then(function (res) {
-      if (res.ok) {
-        supplierList = res.suppliers;
-        try { localStorage.setItem('kizai_mobile_supplier_cache_v1', JSON.stringify(supplierList)); } catch (e) {}
-      }
-    }).catch(function () { /* 取得できなくても致命的ではない（前回キャッシュを使う） */ });
-  }
-
+  // 【2026/8/27変更】単体の通信（refreshSupplierList）は起動時のまとめ取得に
+  // 統合したため削除した。前回データのキャッシュ読み込みだけ残している。
   function loadCachedSupplierList() {
     try {
       var raw = localStorage.getItem('kizai_mobile_supplier_cache_v1');
@@ -1219,17 +1244,8 @@
   // 完全一致していないと、新規追加時に同じ作品のグループへ正しく配置されないため、
   // 既存作品は選択式（プルダウン）にして表記ゆれをなくす。まだ機材リストに無い
   // 新しい作品名だけ、「＋新しい作品名を入力」から自由入力できる。
-  function refreshProjectList() {
-    return apiGet('projectList').then(function (res) {
-      if (res.ok) {
-        projectList = res.projects;
-        try { localStorage.setItem('kizai_mobile_project_cache_v1', JSON.stringify(projectList)); } catch (e) {}
-        populateProjectSelect();
-      } else {
-        markProjectListLoadFailed_();
-      }
-    }).catch(function () { markProjectListLoadFailed_(); });
-  }
+  // 【2026/8/27変更】単体の通信（refreshProjectList）は起動時のまとめ取得に
+  // 統合したため削除した（失敗時のmarkProjectListLoadFailed_はrefreshAllData側から呼ぶ）。
 
   // 作品名の取得に失敗し、かつキャッシュも無く一覧が空のままだった場合、選択肢を
   // 「読み込み中...」のまま止めておかず、失敗したことが分かる表示に変える。
@@ -1983,11 +1999,53 @@
     loadCachedSupplierList();
     loadCachedProjectList();
     loadCachedBookings();
-    refreshEquipmentList();
-    refreshEquipmentCategories();
-    refreshSupplierList();
-    refreshProjectList();
-    refreshBookings(true);
+    refreshAllData(true);
+  }
+
+  // 【2026/8/27追加・速度改善】以前は起動時に機材一覧・カテゴリ別機材・発注先一覧・
+  // 作品名一覧・予約一覧を5回の別々の通信で取得していたが、GAS側に新設した
+  // initData（1回でまとめて返す）action を使うことで通信回数を1回に減らし、
+  // 起動直後の待ち時間を短縮した。
+  function refreshAllData(silent) {
+    return apiGet('initData', { sinceDays: 400 }).then(function (res) {
+      if (!res.ok) {
+        markProjectListLoadFailed_();
+        if (!silent) showBanner('データの取得に失敗しました: ' + res.error, 'error');
+        return;
+      }
+      equipmentList = res.equipment || [];
+      dataLoaded.equipment = true;
+      setEquipmentCategories(res.categories || []);
+      supplierList = res.suppliers || [];
+      projectList = res.projects || [];
+      populateProjectSelect();
+      bookings = res.bookings || [];
+      dataLoaded.bookings = true;
+      try {
+        localStorage.setItem('kizai_equipment_cache_v1', JSON.stringify(equipmentList));
+        localStorage.setItem('kizai_category_cache_v1', JSON.stringify(res.categories || []));
+        localStorage.setItem('kizai_mobile_supplier_cache_v1', JSON.stringify(supplierList));
+        localStorage.setItem('kizai_mobile_project_cache_v1', JSON.stringify(projectList));
+        localStorage.setItem('kizai_mobile_bookings_cache_v1', JSON.stringify(bookings));
+      } catch (e) { /* 保存容量オーバー等は無視 */ }
+      renderCurrentView();
+      // 【2026/8/27修正】以前は、予約追加フォームをデータ到着より先に開いていた場合、
+      // カテゴリ・機材名のプルダウンが後から届いたデータを反映せず空のまま
+      // 固まって見える不具合があった（再度カテゴリを選び直すまで機材名が
+      // 出てこない）。フォームが開いている間にデータが届いたら、その場で
+      // プルダウンの選択肢を作り直すようにした。
+      refreshOpenFormSelects_();
+    }).catch(function (err) {
+      if (!silent) showBanner('通信エラー: ' + err.message, 'error');
+    });
+  }
+
+  function refreshOpenFormSelects_() {
+    if (!document.getElementById('form-overlay').classList.contains('show')) return;
+    populateProjectSelect();
+    populateCategorySelect();
+    var catSel = document.getElementById('f-category');
+    populateEquipmentSelect(catSel.value, undefined);
   }
 
   document.getElementById('settings-btn').addEventListener('click', openSettings);
