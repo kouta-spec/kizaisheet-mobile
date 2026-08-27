@@ -61,18 +61,23 @@
     font-size: 18px; margin: 0; font-weight: 800; letter-spacing: 0.2px;
   }
   /* 【2026/8/27追加】通信中であることをアプリ全体で分かりやすくするための
-     小さな回転スピナー。ヘッダー左側は「裏側で静かに通信中」のとき用、
-     .inline-spinnerは一覧の空表示など各所で使い回す。 */
+     小さな回転スピナー。.inline-spinnerは一覧の空表示など各所で使い回す。
+     【2026/8/27再修正】以前はヘッダー（<header>）の中に置いていたが、headerは
+     スクロールすると画面外へ隠れてしまう普通の要素で、下のタブ（.tabs）だけが
+     position: stickyで常に見える位置に固定されている。そのため一覧をスライドして
+     スクロールすると、スピナーごとヘッダーが見えなくなってしまっていた。
+     常に見えるタブ側へ移動し、表示・非表示はdisplayではなくopacityで切り替える
+     （displayでの切り替えだと、通信の開始・終了のたびにタブの幅が少しガタつくため）。 */
   @keyframes spin { to { transform: rotate(360deg); } }
   #sync-indicator {
-    grid-column: 1; justify-self: start;
-    display: none;
+    flex: 0 0 16px;
     width: 16px; height: 16px;
-    border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+    border: 2px solid rgba(67,97,238,0.22); border-top-color: var(--blue);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
+    opacity: 0; transition: opacity 0.15s ease;
   }
-  #sync-indicator.show { display: block; }
+  #sync-indicator.show { opacity: 1; }
   .inline-spinner {
     display: inline-block; width: 14px; height: 14px;
     border: 2px solid rgba(67,97,238,0.22); border-top-color: var(--blue);
@@ -91,7 +96,7 @@
     position: sticky; top: 0; z-index: 10;
     background: rgba(255,255,255,0.62);
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    display: flex; gap: 8px; padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
     box-shadow: 0 2px 6px rgba(67,97,238,0.06);
   }
   .tab-btn {
@@ -383,12 +388,12 @@
 <div id="bg-layer"></div>
 <div id="app">
   <header>
-    <span id="sync-indicator" title="データを同期中..."></span>
     <h1>機材シート2026</h1>
     <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
   </header>
 
   <div class="tabs" id="view-tabs">
+    <span id="sync-indicator" title="データを同期中..."></span>
     <button class="tab-btn active" data-view="bookings">予約一覧</button>
     <button class="tab-btn" data-view="equipment">機材の状況</button>
   </div>
@@ -574,6 +579,13 @@
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
   var selectedEquipmentRows = []; // 新規追加フォームで「リストに追加」済みの機材（{equipment, quantity, supplier}の配列）
   var currentView = 'bookings'; // 'bookings' または 'equipment'
+
+  // 【2026/8/27追加】「戻る」を押したときに一つ前の画面（詳細シート）へ正しく
+  // 戻れるようにするための仕組み。予約フォーム・作品詳細シート（重複時の
+  // 予約選択にも流用）を、他のシートの上から開いたときだけ値を入れておき、
+  // 閉じるタイミングで実行して元の画面を再構築する。使い終わったらnullに戻す。
+  var formReturnAction = null;
+  var projectDetailReturnAction = null;
 
   // ---------- 設定の読み書き ----------
   function loadSettings() {
@@ -856,7 +868,10 @@
     listEl.innerHTML = '';
     items.forEach(function (b, index) {
       var card = buildBookingCard(b, function (bk) {
-        closeProjectDetail();
+        // 【2026/8/27追加】編集フォームの「戻る」で、この作品詳細シートへ戻れるように
+        // しておく（最新データで作り直すので、編集後の内容も反映された状態で戻る）。
+        formReturnAction = function () { reopenProjectDetailByName_(projectName); };
+        hideProjectDetailOverlay_();
         openEditForm(bk);
       });
       card.style.animationDelay = (index * 40) + 'ms';
@@ -865,8 +880,55 @@
 
     document.getElementById('project-detail-overlay').classList.add('show');
   }
-  function closeProjectDetail() {
+  // 見た目を隠すだけの処理（戻る先には進まない）。このシートの上に予約フォームを
+  // 重ねて開くとき（＝一つ先の画面へ進むとき）に使う。ここでprojectDetailReturnActionを
+  // 実行してしまうと、フォームの裏でこのシートの「戻る先」が先に開いてしまい、
+  // フォームより手前に表示されてしまう不具合になるため、あえて分けている。
+  function hideProjectDetailOverlay_() {
     document.getElementById('project-detail-overlay').classList.remove('show');
+  }
+  function closeProjectDetail() {
+    hideProjectDetailOverlay_();
+    // 【2026/8/27追加】このシートが機材カレンダー（重複日の予約選択）から
+    // 開かれていた場合は、閉じたときに元の機材カレンダー画面へ戻す。
+    if (projectDetailReturnAction) {
+      var action = projectDetailReturnAction;
+      projectDetailReturnAction = null;
+      action();
+    }
+  }
+
+  // 【2026/8/27追加】作品詳細シートを、その時点の最新の予約データから作り直して開く。
+  // 編集フォームから「戻る」で戻ってきたときに使う（編集内容が反映された状態で開ける）。
+  function reopenProjectDetailByName_(projectName) {
+    var items = bookings.filter(function (b) { return (b.project || '（作品名未入力）') === projectName; });
+    openProjectDetail(projectName, items);
+  }
+
+  // 【2026/8/27追加】機材カレンダーで、同じ機材に2件以上の予約が重なっている日を
+  // タップしたときに出す一覧シート。「作品詳細」と同じシート（項目カード一覧）を
+  // 流用し、どの予約を編集するか選んでもらう。1件を選ぶとその編集フォームが開く。
+  function openDayBookingPicker_(equipmentName, dateStr, dayBookings, reopenDetail) {
+    document.getElementById('project-detail-title').textContent = equipmentName + '（' + dateStr + '）';
+    document.getElementById('project-detail-summary').textContent =
+      '重複している予約が' + dayBookings.length + '件あります。編集する予約を選んでください。';
+
+    var listEl = document.getElementById('project-detail-list');
+    listEl.innerHTML = '';
+    dayBookings.forEach(function (b, index) {
+      var card = buildBookingCard(b, function (bk) {
+        // 【2026/8/27追加】編集フォームの「戻る」で、このピッカーへ戻れるようにしておく。
+        formReturnAction = function () { openDayBookingPicker_(equipmentName, dateStr, dayBookings, reopenDetail); };
+        hideProjectDetailOverlay_();
+        openEditForm(bk);
+      });
+      card.style.animationDelay = (index * 40) + 'ms';
+      listEl.appendChild(card);
+    });
+
+    // このピッカー自体の「戻る」「閉じる」では、呼び出し元の機材カレンダーへ戻す。
+    projectDetailReturnAction = reopenDetail;
+    document.getElementById('project-detail-overlay').classList.add('show');
   }
 
   // ---------- 機材の状況（カテゴリごとにグループ表示、タップで使用中／予約あり／空きの詳細） ----------
@@ -971,7 +1033,7 @@
     });
   }
 
-  function buildEquipmentStatusCard(name, entry) {
+  function buildEquipmentStatusCard(name, entry, reopenDetail) {
     entry.upcoming.sort(function (a, b) {
       return a.startDate < b.startDate ? -1 : (a.startDate > b.startDate ? 1 : 0);
     });
@@ -1018,7 +1080,7 @@
         '<div class="mini-cal-grid"></div>' +
       '</div>';
 
-    attachInlineCalendar(card, entry, name);
+    attachInlineCalendar(card, entry, name, reopenDetail);
 
     // 【2026/8/24再修正】「カード全体をタップすると予約一覧タブへ移動する」という動きは、
     // カレンダーが大きくなってからは、カレンダーの余白や日付以外の場所をタップした
@@ -1064,7 +1126,7 @@
     return { y: y, m: m - 1, d: d };
   }
 
-  function attachInlineCalendar(card, entry, name) {
+  function attachInlineCalendar(card, entry, name, reopenDetail) {
     var itemBookings = entry.current.concat(entry.upcoming);
     var overlapDateSet = computeOverlapDateSet_(itemBookings);
     var now = new Date();
@@ -1108,25 +1170,32 @@
       }
       for (var day = 1; day <= daysInMonth; day++) {
         var dStr = formatDateStr(new Date(year, month, day));
-        var matchedBooking = itemBookings.filter(function (b) { return b.startDate <= dStr && dStr <= b.endDate; })[0];
-        var booked = !!matchedBooking;
+        var matchedBookings = itemBookings.filter(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
+        var booked = matchedBookings.length > 0;
         var isOverlap = !!overlapDateSet[dStr];
         var cell = document.createElement('div');
         cell.className = 'mc-cell' + (isOverlap ? ' mc-overlap' : (booked ? ' mc-booked' : '')) + (dStr === todayStrVal ? ' mc-today' : '');
         cell.textContent = String(day);
-        (function (clickedDate, existingBooking) {
+        (function (clickedDate, dayBookings) {
           cell.addEventListener('click', function (e) {
             e.stopPropagation();
-            if (existingBooking) {
+            if (dayBookings.length > 1) {
+              // 【2026/8/27追加】同じ日に2件以上の予約が重なっている（重複）場合、
+              // 以前は1件目しか選べず修正しにくかった。どちらを編集するか選ばせる
+              // 一覧シートを間に挟むようにした（戻る先の設定はopenDayBookingPicker_内で行う）。
+              closeEquipmentCategoryDetail();
+              openDayBookingPicker_(name, clickedDate, dayBookings, reopenDetail);
+            } else if (dayBookings.length === 1) {
               // すでに予約が入っている日をタップした場合は、その予約の編集画面を開く
               // （編集画面には削除ボタンがあるので、そこから削除できる）
+              formReturnAction = reopenDetail;
               closeEquipmentCategoryDetail();
-              openEditForm(existingBooking);
+              openEditForm(dayBookings[0]);
             } else {
-              openAddFormForDate(name, clickedDate);
+              openAddFormForDate(name, clickedDate, reopenDetail);
             }
           });
-        })(dStr, matchedBooking);
+        })(dStr, matchedBookings);
         gridEl.appendChild(cell);
       }
     }
@@ -1147,8 +1216,20 @@
   }
 
   // ---------- 機材の状況：カテゴリの詳細シート ----------
+  // 【2026/8/27追加】機材の状況の詳細シートを、その時点の最新の予約データから
+  // 作り直して開く。予約フォームや重複日の予約選択シートから「戻る」で戻ってきた
+  // ときに使う（保存・編集した内容が反映された状態で開ける）。
+  function reopenEquipmentDetailByCategory_(categoryName) {
+    var built = buildEquipmentStatusMap();
+    var names = (categoryName && equipmentByCategory[categoryName]) ? equipmentByCategory[categoryName] : built.allNames;
+    openEquipmentCategoryDetail(categoryName || '全機材', names, built.byEquipment);
+  }
+
   function openEquipmentCategoryDetail(categoryName, names, byEquipment) {
     document.getElementById('equipment-detail-title').textContent = categoryName;
+    // 【2026/8/27追加】このシートの中（機材カレンダー）から予約フォームや重複日の
+    // 予約選択シートを開いたときに、「戻る」でここへ戻ってこられるようにする。
+    var reopenDetail = function () { reopenEquipmentDetailByCategory_(categoryName); };
 
     var sortedNames = names.slice().sort(function (a, b) {
       var pa = statusPriority(byEquipment[a] || { current: [], upcoming: [] });
@@ -1170,7 +1251,7 @@
       var cardId = 'equip-card-' + idx;
       var statusClass = statusPriority(entry) === 0 ? 'inuse' : (statusPriority(entry) === 1 ? 'upcoming' : 'free');
 
-      var card = buildEquipmentStatusCard(name, entry);
+      var card = buildEquipmentStatusCard(name, entry, reopenDetail);
       card.id = cardId;
       card.style.animationDelay = (idx * 40) + 'ms';
       listEl.appendChild(card);
@@ -1458,7 +1539,9 @@
   // 機材カードのカレンダーで日付をタップしたときに呼ばれる。その機材・その日を
   // あらかじめ選択済みリストに入れた状態で、予約追加フォームを開く（開始日・終了日は
   // 同じ日を仮設定、終了日は必要に応じて後から変更してもらう）。
-  function openAddFormForDate(equipmentName, dateStr) {
+  function openAddFormForDate(equipmentName, dateStr, reopenDetail) {
+    // 【2026/8/27追加】このフォームを閉じたとき（保存後・戻る）に、元の機材カレンダーへ戻す。
+    formReturnAction = reopenDetail;
     closeEquipmentCategoryDetail();
     openAddForm();
     var cat = findCategoryForEquipment(equipmentName);
@@ -1675,6 +1758,15 @@
 
   function closeForm() {
     document.getElementById('form-overlay').classList.remove('show');
+    // 【2026/8/27追加】このフォームが、作品詳細や機材カレンダーなど他のシートの
+    // 上から開かれていた場合は、閉じたタイミングでその画面へ戻す（一つ前の
+    // 行動に戻る）。保存・削除の成功時もここを通るので、保存後もそのまま
+    // 元の画面（最新データで再構築）に戻る。
+    if (formReturnAction) {
+      var action = formReturnAction;
+      formReturnAction = null;
+      action();
+    }
   }
   function showFormError(msg) {
     var el = document.getElementById('form-error');
@@ -1786,17 +1878,13 @@
     }
 
     var total = selectedEquipmentRows.length;
-    var successCount = 0;
-    var noticeMessages = [];
-    var errorMessages = [];
 
-    function postNext(index) {
-      if (index >= total) { finishMultiAdd(); return; }
-      var row = selectedEquipmentRows[index];
-      showLoading('登録中...（' + (index + 1) + '/' + total + '件）');
-      var body = {
-        action: 'addBooking',
-        project: project,
+    // 【2026/8/27速度改善】以前は機材1件ごとに別々の通信（addBooking）を順番に
+    // 行っており、件数が多いほど通信回数が増えて時間がかかっていた
+    // （通信のたびにApps Script側の呼び出しオーバーヘッドと重複チェックが
+    // 積み重なるため）。まとめて1回の通信（addBookingsBatch）で送るように変更した。
+    var items = selectedEquipmentRows.map(function (row) {
+      return {
         equipment: row.equipment,
         quantity: row.quantity ? Number(row.quantity) : undefined,
         supplier: row.supplier,
@@ -1804,43 +1892,42 @@
         endDate: row.endDate,
         note: row.note || ''
       };
-      apiPost(body).then(function (res) {
-        if (res.ok) {
-          successCount++;
-          if (res.overlap) {
-            noticeMessages.push((res.overlapMessage ? res.overlapMessage + '\n' : '') + res.message);
-          } else if (res.warning) {
-            noticeMessages.push(res.warning);
-          }
-        } else {
-          errorMessages.push(row.equipment + '：' + (res.error || '保存に失敗しました'));
-        }
-        postNext(index + 1);
-      }).catch(function (err) {
-        errorMessages.push(row.equipment + '：通信エラー（' + err.message + '）');
-        postNext(index + 1);
-      });
-    }
+    });
 
-    function finishMultiAdd() {
+    showLoading('登録中...（' + total + '件）');
+    apiPost({ action: 'addBookingsBatch', project: project, items: items }).then(function (res) {
       hideLoading();
+      if (!res.ok) {
+        showFormError(res.error || '保存に失敗しました');
+        return;
+      }
+      var results = res.results || [];
+      var successCount = results.filter(function (r) { return r.ok; }).length;
+      var errorMessages = results.filter(function (r) { return !r.ok; }).map(function (r) {
+        return r.equipment + '：' + (r.error || '保存に失敗しました');
+      });
       if (successCount === 0) {
         showFormError(errorMessages.join('\n') || '保存に失敗しました');
         return;
       }
       closeForm();
       var messages = [successCount + '/' + total + '件を登録しました。'];
-      noticeMessages.forEach(function (m) { messages.push(m); });
+      if (res.overlap) {
+        messages.push((res.overlapMessage ? res.overlapMessage + '\n' : '') + res.message);
+      } else if (res.warning) {
+        messages.push(res.warning);
+      }
       errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
-      var hasIssue = (noticeMessages.length > 0 || errorMessages.length > 0);
-      showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(noticeMessages.join('\n')));
+      var hasIssue = (res.overlap || res.warning || errorMessages.length > 0);
+      showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(res.overlapMessage || ''));
       if (!hasIssue) setTimeout(hideBanner, 4000);
       // 【2026/8/27修正】上と同じ理由で静かなモードに変更（重複警告バナーが
       // 一覧の再取得直後に消えてしまう不具合の修正）。
       refreshBookings(true);
-    }
-
-    postNext(0);
+    }).catch(function (err) {
+      hideLoading();
+      showFormError('通信エラー: ' + err.message);
+    });
   }
 
   function deleteCurrentBooking() {
