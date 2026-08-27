@@ -980,26 +980,28 @@
     var card = document.createElement('div');
     card.className = 'card status-' + statusClass;
 
-    var badgeHtml, detailHtml;
+    // 【2026/8/27再修正】以前は「使用中（entry.current）」がある場合、その作品名だけを
+    // 表示し、同じ機材に入っている未来の予約（entry.upcoming）は上部の表示から
+    // 漏れていた（ミニカレンダーの日付には出ていたが、作品名としては見えなかった）。
+    // 過去の予約は不要とのことなので出さないが、未来の予約は使用中かどうかに関わらず
+    // 常にあわせて表示するようにした。
+    var badgeHtml;
+    var lines = [];
     if (entry.current.length) {
       badgeHtml = '<span class="status-badge inuse">使用中</span>';
-      detailHtml = entry.current.map(function (b) {
-        return escapeHtml(b.project || '（作品名未入力）') + '　〜' + escapeHtml(b.endDate) + 'まで';
-      }).join('<br>');
+      entry.current.forEach(function (b) {
+        lines.push(escapeHtml(b.project || '（作品名未入力）') + '　〜' + escapeHtml(b.endDate) + 'まで');
+      });
     } else if (entry.upcoming.length) {
       badgeHtml = '<span class="status-badge upcoming">予約あり</span>';
-      // 【2026/8/27修正】以前は最初の1件だけを表示し、残りは「他◯件」とまとめて
-      // しまっていたため、2件目以降の作品名が画面から見えなかった。
-      // 予約が入っている作品名を全件、使用中（entry.current）と同じ見せ方で
-      // 1行ずつ表示するように変更した。
-      detailHtml = entry.upcoming.map(function (b) {
-        return escapeHtml(b.startDate) + '〜' + escapeHtml(b.endDate) + '　' +
-          escapeHtml(b.project || '（作品名未入力）');
-      }).join('<br>');
     } else {
       badgeHtml = '<span class="status-badge free">空き</span>';
-      detailHtml = '直近の予定はありません';
     }
+    entry.upcoming.forEach(function (b) {
+      lines.push(escapeHtml(b.startDate) + '〜' + escapeHtml(b.endDate) + '　' +
+        escapeHtml(b.project || '（作品名未入力）'));
+    });
+    var detailHtml = lines.length ? lines.join('<br>') : '直近の予定はありません';
 
     card.innerHTML =
       '<div class="row1">' +
