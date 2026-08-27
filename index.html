@@ -204,6 +204,12 @@
   .mc-cell:active { transform: scale(0.88); }
   .mc-cell.mc-other { background: transparent; }
   .mc-cell.mc-booked { background: var(--red); color: white; font-weight: 700; }
+  /* 【2026/8/27追加】期間重複（同じ機材に2件以上の予約が重なっている日）専用の表示。
+     通常の予約あり（mc-booked、赤一色）とひと目で見分けられるよう、斜めの縞模様にしている。 */
+  .mc-cell.mc-overlap {
+    background: repeating-linear-gradient(135deg, #c81e42, #c81e42 4px, #ff95a8 4px, #ff95a8 8px);
+    color: white; font-weight: 800; box-shadow: 0 0 0 2px #8a0f2b inset;
+  }
   .mc-cell.mc-today { box-shadow: 0 0 0 2px var(--blue) inset; font-weight: 800; }
 
   .card.status-inuse { border-left-color: var(--red); }
@@ -1023,11 +1029,53 @@
   // カードの中に、その機材専用の月間カレンダーを組み込む（今月以降を自由に閲覧できる。
   // 通信量の都合上、今月より前へは戻れない）。日付をタップすると、その機材・その日を
   // 開始日にした予約追加フォームがすぐ開く。
+  // 【2026/8/27追加】ある機材の予約一覧の中から、期間が重なっている日付だけを
+  // Setで返す。ガントチャート側（getOverlappingDatesMap）と同じルールで、
+  // 発注先（レンタル）が入っている予約は重複チェックの対象外にする
+  // （自社在庫同士の取り合いだけを「重複」として扱うため）。
+  function computeOverlapDateSet_(itemBookings) {
+    var relevant = itemBookings.filter(function (b) { return !b.supplier; });
+    var counts = {};
+    relevant.forEach(function (b) {
+      var parts = parseSlashDateParts_(b.startDate);
+      var endParts = parseSlashDateParts_(b.endDate);
+      if (!parts || !endParts) return;
+      var cur = new Date(parts.y, parts.m, parts.d);
+      var end = new Date(endParts.y, endParts.m, endParts.d);
+      while (cur <= end) {
+        var ds = formatDateStr(cur);
+        counts[ds] = (counts[ds] || 0) + 1;
+        cur.setDate(cur.getDate() + 1);
+      }
+    });
+    var overlapSet = {};
+    Object.keys(counts).forEach(function (ds) { if (counts[ds] >= 2) overlapSet[ds] = true; });
+    return overlapSet;
+  }
+
+  function parseSlashDateParts_(s) {
+    if (!s) return null;
+    var parts = String(s).split('/');
+    if (parts.length !== 3) return null;
+    var y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+    if (!y || !m || !d) return null;
+    return { y: y, m: m - 1, d: d };
+  }
+
   function attachInlineCalendar(card, entry, name) {
     var itemBookings = entry.current.concat(entry.upcoming);
+    var overlapDateSet = computeOverlapDateSet_(itemBookings);
     var now = new Date();
     var year = now.getFullYear();
     var month = now.getMonth();
+
+    // 【2026/8/27追加】重複している予約があれば、一番早い重複日を含む月を
+    // 最初から表示する（今月より先で重複していても、すぐに気づけるようにするため）。
+    var overlapDates = Object.keys(overlapDateSet).sort();
+    if (overlapDates.length) {
+      var firstOverlapParts = parseSlashDateParts_(overlapDates[0]);
+      if (firstOverlapParts) { year = firstOverlapParts.y; month = firstOverlapParts.m; }
+    }
 
     var labelEl = card.querySelector('.mc-label');
     var gridEl = card.querySelector('.mini-cal-grid');
@@ -1060,8 +1108,9 @@
         var dStr = formatDateStr(new Date(year, month, day));
         var matchedBooking = itemBookings.filter(function (b) { return b.startDate <= dStr && dStr <= b.endDate; })[0];
         var booked = !!matchedBooking;
+        var isOverlap = !!overlapDateSet[dStr];
         var cell = document.createElement('div');
-        cell.className = 'mc-cell' + (booked ? ' mc-booked' : '') + (dStr === todayStrVal ? ' mc-today' : '');
+        cell.className = 'mc-cell' + (isOverlap ? ' mc-overlap' : (booked ? ' mc-booked' : '')) + (dStr === todayStrVal ? ' mc-today' : '');
         cell.textContent = String(day);
         (function (clickedDate, existingBooking) {
           cell.addEventListener('click', function (e) {
