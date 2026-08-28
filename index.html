@@ -242,9 +242,14 @@
   }
   .mc-cell.mc-today { box-shadow: 0 0 0 2px var(--blue) inset; font-weight: 800; }
 
-  .card.status-inuse { border-left-color: var(--red); }
-  .card.status-upcoming { border-left-color: var(--orange); }
-  .card.status-free { border-left-color: var(--green); }
+  /* 【2026/8/28修正】以前はこのカード左端の色にvar(--red)/var(--orange)/var(--green)
+     （明るめの汎用カラー）を使っていたが、同じ「使用中／予約あり／空き」を表す
+     凡例の丸マーク（.status-legend-dot）やチップ（.jump-chip）・バッジ（.status-badge）は
+     別の色（#c81e42/#a35a00/#0b8f61、やや濃いめの色）を使っており、同じ意味なのに
+     色が微妙に違って見えてしまっていた。すべて同じ色に統一した。 */
+  .card.status-inuse { border-left-color: #c81e42; }
+  .card.status-upcoming { border-left-color: #a35a00; }
+  .card.status-free { border-left-color: #0b8f61; }
   .status-badge {
     font-size: 11px; padding: 4px 11px; border-radius: 20px; font-weight: 700; white-space: nowrap;
   }
@@ -605,6 +610,9 @@
       <span class="status-legend-item"><span class="status-legend-dot upcoming"></span>予約あり（これから始まる予約がある）</span>
       <span class="status-legend-item"><span class="status-legend-dot free"></span>空き（予約なし）</span>
     </div>
+    <!-- 【2026/8/28追加】下のチップ（機材名）がタップできること自体に気づきにくいという
+         指摘があったため、一言添えた。 -->
+    <div class="hint" style="margin-bottom:8px;">機材名をタップすると、その機材までジャンプできます。</div>
     <div class="jump-row" id="equipment-detail-jump"></div>
     <div id="equipment-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     <div class="sheet-actions">
@@ -627,7 +635,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-28f';
+  var APP_BUILD_VERSION = '2026-08-28g';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
