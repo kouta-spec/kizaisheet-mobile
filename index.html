@@ -185,7 +185,14 @@
   }
   .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(67,97,238,0.16); }
   .card:active { transform: scale(0.98); }
-  .card.supplier { border-left-color: var(--orange); }
+  /* 【2026/8/28修正】以前は左端の細い線の色を変えるだけだったため、発注先（レンタル）の
+     機材かどうかが一見して分かりにくいという指摘があった。カード全体に薄いオレンジ色の
+     背景を付けて、ひと目で区別できるようにした。左端の色・下の「発注先」バッジの文字色
+     （#a35a00）とも揃えている。 */
+  .card.supplier {
+    border-left-color: #a35a00;
+    background: rgba(255, 239, 214, 0.85);
+  }
   .card .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .card .equipment { font-weight: 700; font-size: 15px; }
   .card .price { font-size: 13px; color: var(--sub); white-space: nowrap; }
@@ -635,7 +642,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-28g';
+  var APP_BUILD_VERSION = '2026-08-28h';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];

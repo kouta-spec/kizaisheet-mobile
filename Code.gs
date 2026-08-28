@@ -387,6 +387,24 @@ function buildOverlapToastMessage_(overlapSummary) {
   return `⚠️ 期間重複あり（${names.length}件）: ${names.join('、')}（ガントチャートの赤いセルをご確認ください）`;
 }
 
+/**
+ * 【2026/8/28追加】PC側でマスターガントチャートのA1チェックボックスを使って
+ * ガントチャートを更新した人を、アクセスログに残すために調べる。
+ * インストール型のonEditトリガー経由で動いているため、Session.getActiveUser()は
+ * 基本的に「実際にチェックボックスを押した人」のアカウントを返す（同じGoogle
+ * Workspaceドメイン内で、対象ユーザーがそのスプレッドシートを開ける権限を持って
+ * いれば、メールアドレスまで取得できることが多い）。ただし権限設定やドメインの
+ * 設定次第では空文字になることがあるため、その場合は代わりの表示名にする。
+ */
+function getPcEditorName_() {
+  try {
+    var email = Session.getActiveUser().getEmail();
+    return email ? email : 'PC（不明なユーザー）';
+  } catch (e) {
+    return 'PC（不明なユーザー）';
+  }
+}
+
 function handleGanttTriggerEdit(ss, sheet, range, editedCell) {
   // A1セル（ガントチャート更新トリガー）
   //
@@ -467,6 +485,17 @@ function handleGanttTriggerEdit(ss, sheet, range, editedCell) {
         statusCell.setValue('❌ 更新エラー: ' + error.message);
       } finally {
         range.setValue(false);
+        // 【2026/8/28追加】これまでスマホアプリからの更新（refreshGantt）だけが
+        // 「アクセスログ」タブに記録され、PC側でこのA1チェックボックスを使って
+        // 更新した場合は記録されていなかった（アプリ経由の更新時刻とアクセスログの
+        // 最新時刻がずれて見える原因になっていた）。重複あり・更新完了・エラーの
+        // どの結果でも、チェックボックスが押されたこと自体は必ず1回記録する
+        // （アプリ側のrefreshGanttが結果にかかわらず必ず1回ログを書いているのと揃えた）。
+        try {
+          logMobileAccess_(getPcEditorName_(), 'ガントチャート更新（PC）', '');
+        } catch (logErr) {
+          Logger.log('PC側アクセスログの記録に失敗: ' + logErr.message);
+        }
       }
     }
   }
@@ -1390,6 +1419,13 @@ function updateEquipmentUsageRate() {
   ]]);
   usageSheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e8eaed');
   usageSheet.setFrozenRows(1);
+  // 【2026/8/28追加】「機材名」の並び順が何を基準にしているか分かりにくいという
+  // 指摘があったため、ヘッダーセルに注釈（セルの右上にマウスを乗せると出る吹き出し）
+  // を付けた。使用率順などへの並べ替えは行っていないことも合わせて明記する。
+  usageSheet.getRange(1, 1).setNote(
+    '機材名の並び順は、マスターガントチャートの「機材名」列と同じ順番です（使用率が高い順などへの並べ替えは行っていません）。\n' +
+    'この一覧は自動では更新されません。最新の状態にしたいときは、メニューの「機材使用率を集計」を実行してください。'
+  );
 
   if (rows.length > 0) {
     usageSheet.getRange(2, 1, rows.length, 3).setValues(rows);
