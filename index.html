@@ -627,7 +627,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-28e';
+  var APP_BUILD_VERSION = '2026-08-28f';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2674,7 +2674,11 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').catch(function () { /* 登録失敗しても致命的ではない */ });
+      // 【2026/8/28追加】updateViaCache: 'none'を指定しないと、sw.js自体の取得にも
+      // ブラウザのHTTPキャッシュが使われることがあり、コードを更新しても
+      // 新しいsw.jsに気づかれず、古い動作のまま（＝古いindex.htmlを掴んだままに
+      // なる原因の1つ）になり得るため、常にネットワークから確認するようにした。
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(function () { /* 登録失敗しても致命的ではない */ });
     });
   }
 })();
