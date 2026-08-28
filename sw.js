@@ -4,7 +4,7 @@
 // データそのもの（予約一覧など）は毎回ネットワークから取得する
 // （キャッシュを見せてしまうと古いデータに気づけなくなるため）。
 
-const CACHE_NAME = 'kizai-mobile-v4';
+const CACHE_NAME = 'kizai-mobile-v6';
 const APP_SHELL = [
   './',
   './index.html',
@@ -47,9 +47,16 @@ self.addEventListener('fetch', (event) => {
 
   // ページ本体（index.html）は「まずネットワークから最新版を取りに行き、取れなければキャッシュ」にする
   // （こうしないと、コード更新後も古い画面がキャッシュから表示され続けてしまうため）
+  // 【2026/8/28修正】fetch()に何も指定しないと、ブラウザ自身が持っているHTTPキャッシュ
+  // （Service WorkerのCache APIとは別物）がまだ「新しい」と判断されている間は、
+  // ネットワークに問い合わせすら行かずそのキャッシュがそのまま返ってきてしまう
+  // ことが分かった。GitHub Pagesは配信するファイルに数分程度のキャッシュ有効期限を
+  // 付けているため、更新後しばらくは（ブラウザを開き直しても）以前の内容が
+  // 表示され続けてしまっていた。{cache: 'no-store'}を指定し、常にネットワークへ
+  // 直接問い合わせて本当に最新の内容を取りに行くようにした。
   if (event.request.mode === 'navigate' || url.indexOf('index.html') !== -1) {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-store' })
         .then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
