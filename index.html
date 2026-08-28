@@ -609,7 +609,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-28a';
+  var APP_BUILD_VERSION = '2026-08-28b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2237,8 +2237,22 @@
       // 削除して直したはずなのに同じピッカー画面に留まり続ける不具合があった。
       return refreshBookings(true).then(function () {
         hideLoading();
-        closeForm();
+        // 【2026/8/28追加】pendingOverlapEquipmentの更新は、closeForm()より前に
+        // 行っておく（削除した機材自身がまだ重複しているかを、この下の判定で使うため）。
         refreshOverlapStateAfterDelete_(restoreBody.equipment);
+        var stillOverlappingSameEquipment = pendingOverlapEquipment.indexOf(restoreBody.equipment) !== -1;
+        closeForm();
+        // 【2026/8/28追加】削除で今回の機材自体の重複は直ったが、別の機材の重複が
+        // まだ残っている場合、以前はそのままカテゴリ一覧（または前の画面）に戻るだけで、
+        // バナーの「カレンダーを見る」ボタンを押さないと重複箇所にたどり着けなかった。
+        // 「削除が完了したら重複警告のある画面に戻りたい」との要望に合わせて、
+        // その場合は自動でその機材のカレンダー（重複日がハイライトされた画面）まで
+        // 移動するようにした。
+        // ・削除した機材自身がまだ重複している場合は、closeForm()が既にその重複ピッカーへ
+        // 　戻しているので、ここでは何もしない（二重に画面を切り替えない）。
+        if (!stillOverlappingSameEquipment && pendingOverlapEquipment.length > 0) {
+          jumpToEquipmentCalendar(pendingOverlapEquipment[0]);
+        }
         showUndoDeleteBanner_(restoreBody, res.message || '予約を削除しました。');
       });
     }).catch(function (err) {
