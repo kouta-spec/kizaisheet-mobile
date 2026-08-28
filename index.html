@@ -42,22 +42,34 @@
      見え方（どこが切り取られるか）が変わってしまい、「上部では少しクロップされ、
      スクロールすると途中で少し広がる」ように見えていた。
      htmlの背景はCSS上「キャンバス背景」として扱われ、position: fixedな要素とは異なり
-     ビューポート全体を常に覆うよう特別に描画されるため、この問題が起きない。
-     そのため画像はhtmlの背景として直接敷き、#bg-layerは廃止する。
+     ビューポート全体を常に覆うよう特別に描画されるため、この問題が起きない…はずだった。
      【2026/8/27再修正】background-attachmentの指定を入れ忘れていたため、キャンバス背景が
      画面（ビューポート）ではなく「ページ全体（スクロールする中身をすべて含めた高さ）」を
-     基準にcoverで拡大されてしまい、画像が縦に間延びしたように見え、スクロールすると
-     見えている範囲も変わってしまっていた。background-attachment: fixedを指定して、
-     以前の#bg-layer（常に画面ぴったりの大きさ）と同じ見え方に戻す。 */
-  html {
-    background-color: var(--bg);
-    background-size: cover; background-position: center; background-repeat: no-repeat;
-    background-attachment: fixed;
-  }
-  /* bodyには背景を付けない：付けてしまうと、bodyの実際の高さ（＝中身の高さ）ぶんだけ
-     不透明な板としてhtmlの背景（壁紙）の上に乗ってしまい、コンテンツが
-     ある範囲では壁紙が一切透けなくなる。 */
+     基準にcoverで拡大されてしまい、画像が縦に間延びしたように見えていた。
+     background-attachment: fixedを指定して直したつもりだった。
+     【2026/8/28再々修正】実機（iPhone Safari）で確認したところ、上の
+     background-attachment: fixedの指定そのものがiOS Safariでは効かない
+     （WebKitが意図的に無視する仕様）ことが判明した。効かないぶん結局
+     「ページ全体の高さ」基準に戻ってしまい、縦に間延びするバグが再発していた
+     （Chrome系ブラウザでは効くため、PC・Android・検証環境では問題が見えなかった）。
+     そのため、htmlのキャンバス背景方式はやめ、#bg-layer（position: fixed）方式に戻す。
+     ただし以前の#bg-layerでは高さをheight:100%（＝実質100vh相当）にしていたため
+     アドレスバーの出入りのたびに箱の高さが変わっていた。今回は高さを100lvh
+     （＝アドレスバーが隠れた状態＝最大サイズを基準にした、常に一定の値）で固定する。
+     アドレスバーの出入りで値が変わらないため、スクロール中にcoverの見え方が
+     変化することがなく、かつcoverなので画面より少し大きく描かれる分は
+     はみ出して隠れるだけで空白ができることもない。 */
+  html { background-color: var(--bg); }
   body { background: transparent; }
+  #bg-layer {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 100vh;   /* 100lvh非対応の古いブラウザ向けの保険 */
+    height: 100lvh;
+    z-index: -1;
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+    pointer-events: none;
+  }
   #app { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
   /* ユーザーが設定画面から任意の背景画像を選ぶと、ここに画面全体を覆う形で敷かれる。
      画像が未設定の間は単なる白背景（--bg）のまま。カード・タブ・シートは半透明＋
@@ -415,6 +427,7 @@
 </style>
 </head>
 <body>
+<div id="bg-layer"></div>
 <div id="app">
   <header>
     <h1>機材シート2026</h1>
@@ -609,7 +622,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-28b';
+  var APP_BUILD_VERSION = '2026-08-28d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2415,9 +2428,11 @@
   }
 
   function applyBackgroundImage(dataUrl) {
-    // 【2026/8/27修正】専用div（#bg-layer、position: fixed）ではなく、htmlの背景
-    // として直接敷く。理由はCSS側（html { ... }の直前）のコメントを参照。
-    document.documentElement.style.backgroundImage = "url('" + dataUrl + "')";
+    // 【2026/8/28再々修正】iOS Safari実機でbackground-attachment: fixedが効かない
+    // ことが判明したため、htmlの背景ではなく専用div（#bg-layer、position: fixed;
+    // height: 100lvh;）に戻した。理由はCSS側（#bg-layerの直前）のコメントを参照。
+    var el = document.getElementById('bg-layer');
+    if (el) el.style.backgroundImage = "url('" + dataUrl + "')";
   }
 
   function updateBgSettingsUi() {
@@ -2437,7 +2452,8 @@
   }
 
   function clearBackgroundImage() {
-    document.documentElement.style.backgroundImage = 'none';
+    var el = document.getElementById('bg-layer');
+    if (el) el.style.backgroundImage = 'none';
     try { localStorage.removeItem(BG_STORAGE_KEY); } catch (e) { /* 無視 */ }
     updateBgSettingsUi();
   }
@@ -2493,15 +2509,46 @@
     var url = document.getElementById('settings-url').value.trim();
     var token = document.getElementById('settings-token').value.trim();
     var errEl = document.getElementById('settings-error');
+    errEl.classList.remove('show');
     if (!url || !token) {
       errEl.textContent = 'URLと合言葉の両方を入力してください';
       errEl.classList.add('show');
       return;
     }
+
+    // 【2026/8/28追加】以前はここで内容を確認せずそのまま保存し、この画面を閉じていた。
+    // そのためURL・合言葉が間違っていても「保存はできた」ように見えてしまい、
+    // 実際にはその後の予約データ取得が裏側で静かに失敗するだけで、本人には
+    // 「予約一覧がずっと読み込み中のまま」としか伝わらなかった（作品名の入力欄に
+    // 小さくエラー文が出るだけで、気づかれにくかった）。保存する前に、入力された
+    // URL・合言葉で実際に1回通信して確認し、うまくいかない場合はこの画面を閉じずに
+    // その場でエラーを表示するようにした。
+    var previousSettings = settings;
     settings = { url: url, token: token };
-    saveSettings();
-    document.getElementById('settings-overlay').classList.remove('show');
-    initialLoad();
+
+    var saveBtn = document.getElementById('settings-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '接続を確認中...';
+
+    apiGet('bookings', { sinceDays: 1 }).then(function (res) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存して接続';
+      if (!res.ok) {
+        settings = previousSettings; // 確認できなかった内容は保存しない
+        errEl.textContent = res.error || '接続を確認できませんでした。URL・合言葉をご確認ください。';
+        errEl.classList.add('show');
+        return;
+      }
+      saveSettings();
+      document.getElementById('settings-overlay').classList.remove('show');
+      initialLoad();
+    }).catch(function (err) {
+      settings = previousSettings;
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存して接続';
+      errEl.textContent = '通信エラー: ' + err.message + '（通信環境をご確認のうえ、もう一度お試しください）';
+      errEl.classList.add('show');
+    });
   }
 
   // ---------- 初期化 ----------
