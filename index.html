@@ -539,6 +539,11 @@
          ボタン・リストは備考欄より下に配置している。） -->
     <div id="multi-equipment-fields">
       <button type="button" class="btn secondary" id="equipment-add-btn" style="width:100%;">＋ この機材をリストに追加</button>
+      <!-- 【2026/8/27追加】「機材名を選択してください」等のエラーが、フォーム下部の
+           共通エラー表示（#form-error）に出ると、選択済み機材の件数が多いときは
+           このボタンから離れた場所に出て気づきにくかった。ボタンのすぐ下に
+           専用のエラー表示を置く。 -->
+      <div class="form-error" id="equipment-add-error"></div>
       <div id="selected-equipment-list"></div>
     </div>
     <div class="form-error" id="form-error"></div>
@@ -604,7 +609,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-27i';
+  var APP_BUILD_VERSION = '2026-08-27j';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1663,17 +1668,17 @@
   // 入力済みの内容をコピーした初期値になり、そのあとリスト側で個別に編集できる）。
   function addSelectedEquipment() {
     var equipment = document.getElementById('f-equipment').value.trim();
-    if (!equipment) { showFormError('機材名を選択してください'); return; }
+    if (!equipment) { showEquipmentAddError('機材名を選択してください'); return; }
     if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
-      showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
+      showEquipmentAddError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
       return;
     }
     var already = selectedEquipmentRows.some(function (row) { return row.equipment === equipment; });
     if (already) {
-      showFormError('「' + equipment + '」は既にリストに追加されています。');
+      showEquipmentAddError('「' + equipment + '」は既にリストに追加されています。');
       return;
     }
-    hideFormError();
+    hideEquipmentAddError();
     var defaultStart = fromDateInputValue(document.getElementById('f-start').value);
     var defaultEnd = fromDateInputValue(document.getElementById('f-end').value);
     var defaultNote = document.getElementById('f-note').value.trim();
@@ -1863,12 +1868,34 @@
     }
   }
   function showFormError(msg) {
+    hideEquipmentAddError();
     var el = document.getElementById('form-error');
     el.textContent = msg;
     el.classList.add('show');
   }
   function hideFormError() {
     document.getElementById('form-error').classList.remove('show');
+    hideEquipmentAddError();
+  }
+
+  // 【2026/8/27追加】「＋この機材をリストに追加」ボタン専用のエラー表示。
+  // フォーム下部の共通エラー（showFormError/hideFormError）とは別の場所に出すことで、
+  // ボタンを押した直後に何が起きたか、スクロールしなくてもすぐ分かるようにする。
+  function showEquipmentAddError(msg) {
+    hideFormError_() ; // 共通エラーは隠す（下のhideFormError_の定義を参照）
+    var el = document.getElementById('equipment-add-error');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function hideEquipmentAddError() {
+    var el = document.getElementById('equipment-add-error');
+    if (el) el.classList.remove('show');
+  }
+  // showFormError内でhideEquipmentAddErrorを呼ぶのと対になる、共通エラーだけを
+  // 隠す内部専用ヘルパー（hideFormErrorを直接呼ぶと再帰してしまうため分けている）。
+  function hideFormError_() {
+    var el = document.getElementById('form-error');
+    if (el) el.classList.remove('show');
   }
 
   function submitForm() {
