@@ -609,10 +609,19 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-27j';
+  var APP_BUILD_VERSION = '2026-08-28a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
+  // 【2026/8/27追加】「今、期間重複の可能性があると分かっている機材」の名前一覧。
+  // 追加・編集・まとめ追加・ガントチャート更新はそのたびにシート全体を再チェック
+  // しているので、それらの結果はこの一覧を丸ごと置き換える（setOverlapStateFromAuthoritative_）。
+  // 削除だけは速度優先でシート全体の再チェックを行っていないため、削除した機材
+  // 1件についてだけ手元のデータで再判定し、この一覧から出し入れする
+  // （refreshOverlapStateAfterDelete_）。こうすることで、複数の機材が重複警告に
+  // 出ているときに1件だけ直しても、直った機材の表示だけが消え、まだ直っていない
+  // 機材の警告は残るようになる。
+  var pendingOverlapEquipment = [];
   var equipmentList = [];
   // 「一度も読み込めていない（＝まだ通信待ち）」と「読み込んだ結果が本当に0件だった」を
   // 区別するためのフラグ。これが立つ前は、一覧が空でも「データがありません」ではなく
@@ -757,6 +766,70 @@
   function hideBanner() {
     document.getElementById('status-banner').className = '';
   }
+
+  // 【2026/8/27追加】追加・編集・まとめ追加・ガントチャート更新は、そのたびに
+  // シート全体の重複を再チェックしている（getEquipmentOverlapSummary）ので、
+  // そのレスポンスは「今その時点でシート全体のどこに重複があるか」の完全な一覧
+  // として信頼できる。そのため、pendingOverlapEquipmentを丸ごと置き換える。
+  function setOverlapStateFromAuthoritative_(res) {
+    pendingOverlapEquipment = res.overlap ? extractOverlapEquipmentNames(res.overlapMessage) : [];
+  }
+
+  // 【2026/8/27追加】削除は速度優先でシート全体の重複チェックを行っていないため、
+  // レスポンスのoverlap:falseを「シート全体の重複がなくなった」とは解釈できない
+  // （削除に関係のない他の機材の重複はそのまま残っている可能性がある）。そこで、
+  // 削除した機材1件についてだけ、手元にある最新の予約データ（bookings、
+  // refreshBookings後の状態）を使って「まだ重複しているか」を判定し、その機材だけを
+  // pendingOverlapEquipmentへ出し入れする。他の機材の分はそのまま変更しない。
+  function refreshOverlapStateAfterDelete_(equipmentName) {
+    if (!equipmentName) return;
+    var itemBookings = bookings.filter(function (b) { return b.equipment === equipmentName; });
+    var overlapDateSet = computeOverlapDateSet_(itemBookings);
+    var stillOverlapping = Object.keys(overlapDateSet).length > 0;
+    var idx = pendingOverlapEquipment.indexOf(equipmentName);
+    if (stillOverlapping) {
+      if (idx === -1) pendingOverlapEquipment.push(equipmentName);
+    } else {
+      if (idx !== -1) pendingOverlapEquipment.splice(idx, 1);
+    }
+  }
+
+  // 【2026/8/27追加】pendingOverlapEquipmentの内容を、指定した要素の中に
+  // 「⚠️ まだ重複している機材」の見出し＋カレンダーへ飛ぶボタンの行として追記する。
+  // 他のバナー内容（削除の「元に戻す」など）と一緒に表示したいときに使う共通処理。
+  function appendOverlapReminder_(containerEl) {
+    if (!pendingOverlapEquipment.length) return;
+    var note = document.createElement('div');
+    note.style.marginTop = '8px';
+    note.textContent = '⚠️ まだ期間重複の可能性がある機材：';
+    containerEl.appendChild(note);
+    var row = document.createElement('div');
+    row.className = 'banner-jump-row';
+    pendingOverlapEquipment.forEach(function (name) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'banner-jump-btn';
+      btn.textContent = '📅 ' + name + 'のカレンダーを見る';
+      btn.addEventListener('click', function () {
+        hideBanner();
+        jumpToEquipmentCalendar(name);
+      });
+      row.appendChild(btn);
+    });
+    containerEl.appendChild(row);
+  }
+
+  // 【2026/8/27追加】まだ重複している機材が残っている間は、他の一時的な通知
+  // （削除の「元に戻す」の期限切れなど）が消えたあとも、この警告だけは表示し
+  // 続ける。残っていなければバナー自体を消す。
+  function renderPersistentOverlapBanner_() {
+    if (!pendingOverlapEquipment.length) { hideBanner(); return; }
+    var el = document.getElementById('status-banner');
+    el.innerHTML = '';
+    appendOverlapReminder_(el);
+    el.className = 'show warn';
+  }
+
   function showLoading(text) {
     document.getElementById('loading-text').textContent = text || '更新中...';
     document.getElementById('loading-overlay').classList.add('show');
@@ -977,6 +1050,21 @@
     openProjectDetail(projectName, items);
   }
 
+  // 【2026/8/27追加】機材カレンダーで、指定した機材・日付の予約を、そのときの
+  // 最新bookingsデータから数え直す。重複修正のためこのピッカーへ「戻る」ときに
+  // 使う（詳しい理由はopenDayBookingPicker_内のformReturnActionのコメントを参照）。
+  function getFreshDayBookings_(equipmentName, dateStr) {
+    var today = todayStr();
+    return bookings.filter(function (b) {
+      if (b.equipment !== equipmentName) return false;
+      // 機材カレンダー・機材カードと同じ範囲（使用中＋今後の予約。終わった過去の
+      // 予約は対象外）に揃える。
+      var isRelevant = (b.startDate <= today && today <= b.endDate) || (b.startDate > today);
+      if (!isRelevant) return false;
+      return b.startDate <= dateStr && dateStr <= b.endDate;
+    });
+  }
+
   // 【2026/8/27追加】機材カレンダーで、同じ機材に2件以上の予約が重なっている日を
   // タップしたときに出す一覧シート。「作品詳細」と同じシート（項目カード一覧）を
   // 流用し、どの予約を編集するか選んでもらう。1件を選ぶとその編集フォームが開く。
@@ -990,8 +1078,22 @@
     listEl.innerHTML = '';
     dayBookings.forEach(function (b, index) {
       var card = buildBookingCard(b, function (bk) {
-        // 【2026/8/27追加】編集フォームの「戻る」で、このピッカーへ戻れるようにしておく。
-        formReturnAction = function () { openDayBookingPicker_(equipmentName, dateStr, dayBookings, reopenDetail); };
+        // 【2026/8/27修正】以前はここで、このピッカーを開いた時点のdayBookings
+        // （古いデータ）をそのまま使って「戻る」時に再度このピッカーを開いていた。
+        // そのため、編集画面で削除や日付変更をしても、戻ってきたピッカーには
+        // 削除済みの予約がまだ残っていたり、内容が更新前のままだったりしていた
+        // （スプレッドシート上は正しく直っているのに、画面だけ古いまま）。
+        // 「戻る」が実際に呼ばれるタイミングで、最新のbookingsから改めて
+        // その日の予約を数え直すようにした。重複が解消され1件以下になっていれば、
+        // もう選ぶ意味がないので機材カレンダーへ戻す。
+        formReturnAction = function () {
+          var freshDayBookings = getFreshDayBookings_(equipmentName, dateStr);
+          if (freshDayBookings.length >= 2) {
+            openDayBookingPicker_(equipmentName, dateStr, freshDayBookings, reopenDetail);
+          } else {
+            reopenDetail();
+          }
+        };
         hideProjectDetailOverlay_();
         openEditForm(bk);
       }, { emphasizeProject: true });
@@ -1855,6 +1957,36 @@
     return yyyymmddDash.replace(/-/g, '/');
   }
 
+  // 【2026/8/27追加】開始日を選ぶと、終了日の「月」も開始日と同じ月に自動で
+  // 合わせる。終了日の月だけ選び忘れて前の月のまま保存してしまう、という声が
+  // 多かったための対応。終了日が空のときは開始日と同じ日を入れる。終了日が
+  // 既に入力されている場合、同じ月ならそのまま（日はいじらない）、違う月なら
+  // 開始日の月に移す（その月に存在しない日は月末に丸める）。移した結果が
+  // 開始日より前になってしまう場合は開始日と同じ日にする。
+  function syncEndMonthToStart_() {
+    var startVal = document.getElementById('f-start').value; // "YYYY-MM-DD" 形式
+    if (!startVal) return;
+    var endEl = document.getElementById('f-end');
+    var startParts = startVal.split('-').map(Number);
+    var startY = startParts[0], startM = startParts[1], startD = startParts[2];
+
+    if (!endEl.value) {
+      endEl.value = startVal;
+      return;
+    }
+
+    var endParts = endEl.value.split('-').map(Number);
+    var endY = endParts[0], endM = endParts[1], endD = endParts[2];
+    if (endY === startY && endM === startM) return; // 既に同じ月なら何もしない
+
+    var lastDayOfStartMonth = new Date(startY, startM, 0).getDate();
+    var newDay = Math.min(endD, lastDayOfStartMonth);
+    var newEndDate = new Date(startY, startM - 1, newDay);
+    var newStartDate = new Date(startY, startM - 1, startD);
+    if (newEndDate < newStartDate) newEndDate = newStartDate;
+    endEl.value = toDateInputValue(formatDateStr(newEndDate));
+  }
+
   function closeForm() {
     document.getElementById('form-overlay').classList.remove('show');
     // 【2026/8/27追加】このフォームが、作品詳細や機材カレンダーなど他のシートの
@@ -1952,26 +2084,30 @@
 
     showLoading('更新中...');
     apiPost(body).then(function (res) {
-      hideLoading();
       if (!res.ok) {
+        hideLoading();
         showFormError(res.error || '保存に失敗しました');
         return;
       }
-      closeForm();
-      if (res.overlap) {
-        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
-      } else if (res.warning) {
-        showBanner(res.warning, 'warn');
-      } else {
-        showBanner(res.message || '保存しました。', 'info');
-        setTimeout(hideBanner, 4000);
-      }
-      // 【2026/8/27修正】以前はrefreshBookings()を「静かではない」モードで呼んでいたため、
-      // このすぐ上で出した重複警告バナー（カレンダーへ飛ぶボタン付き）が、
-      // 一覧の再取得が終わった瞬間に自動でhideBanner()されて即座に消えてしまう
-      // 不具合があった。保存後の再取得はローディング表示も不要なので、
-      // 静かな（バナーに触れない）モードで呼ぶようにした。
-      refreshBookings(true);
+      // 【2026/8/28修正】以前はここでcloseForm()を先に呼んでいたが、closeForm()は
+      // その場でformReturnAction（重複ピッカーへ「戻る」処理など）を実行してしまう。
+      // formReturnActionは最新のbookingsを見て重複が解消したか判定するため、
+      // まだ古いbookingsのまま実行すると「直したのにまだ重複扱いのピッカーに
+      // 戻ってしまう」不具合になる。そのため、最新データを取得し終えてから
+      // closeForm()（＝画面遷移）を行うようにした。
+      return refreshBookings(true).then(function () {
+        hideLoading();
+        closeForm();
+        setOverlapStateFromAuthoritative_(res);
+        if (res.overlap) {
+          showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
+        } else if (res.warning) {
+          showBanner(res.warning, 'warn');
+        } else {
+          showBanner(res.message || '保存しました。', 'info');
+          setTimeout(hideBanner, 4000);
+        }
+      });
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
@@ -2017,8 +2153,8 @@
 
     showLoading('登録中...（' + total + '件）');
     apiPost({ action: 'addBookingsBatch', project: project, items: items }).then(function (res) {
-      hideLoading();
       if (!res.ok) {
+        hideLoading();
         showFormError(res.error || '保存に失敗しました');
         return;
       }
@@ -2028,23 +2164,27 @@
         return r.equipment + '：' + (r.error || '保存に失敗しました');
       });
       if (successCount === 0) {
+        hideLoading();
         showFormError(errorMessages.join('\n') || '保存に失敗しました');
         return;
       }
-      closeForm();
-      var messages = [successCount + '/' + total + '件を登録しました。'];
-      if (res.overlap) {
-        messages.push((res.overlapMessage ? res.overlapMessage + '\n' : '') + res.message);
-      } else if (res.warning) {
-        messages.push(res.warning);
-      }
-      errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
-      var hasIssue = (res.overlap || res.warning || errorMessages.length > 0);
-      showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(res.overlapMessage || ''));
-      if (!hasIssue) setTimeout(hideBanner, 4000);
-      // 【2026/8/27修正】上と同じ理由で静かなモードに変更（重複警告バナーが
-      // 一覧の再取得直後に消えてしまう不具合の修正）。
-      refreshBookings(true);
+      // 【2026/8/28修正】上のsubmitSingleEditBookingと同じ理由で、closeForm()
+      // （＝formReturnActionの実行）は最新データの取得後に行うようにした。
+      return refreshBookings(true).then(function () {
+        hideLoading();
+        closeForm();
+        setOverlapStateFromAuthoritative_(res);
+        var messages = [successCount + '/' + total + '件を登録しました。'];
+        if (res.overlap) {
+          messages.push((res.overlapMessage ? res.overlapMessage + '\n' : '') + res.message);
+        } else if (res.warning) {
+          messages.push(res.warning);
+        }
+        errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
+        var hasIssue = (res.overlap || res.warning || errorMessages.length > 0);
+        showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(res.overlapMessage || ''));
+        if (!hasIssue) setTimeout(hideBanner, 4000);
+      });
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
@@ -2080,15 +2220,27 @@
 
     showLoading('削除中...');
     apiPost({ action: 'deleteBooking', row: editingRow }).then(function (res) {
-      hideLoading();
       if (!res.ok) {
+        hideLoading();
         showFormError(res.error || '削除に失敗しました');
         return;
       }
-      closeForm();
       // 【2026/8/27修正】上と同じ理由で静かなモードに変更。
-      refreshBookings(true);
-      showUndoDeleteBanner_(restoreBody, res.message || '予約を削除しました。');
+      // 【2026/8/27再修正】削除はシート全体の重複チェックを行っていないため、
+      // 削除した機材がまだ重複しているかどうかは、最新の予約データが揃ってから
+      // （refreshBookings完了後に）手元で判定する必要がある。そのため、
+      // 「元に戻す」バナーの表示もrefreshBookingsの完了を待ってから行うようにした。
+      // 【2026/8/28再修正】closeForm()も、この最新データ取得の後に呼ぶよう順番を
+      // 変更した。closeForm()はその場でformReturnAction（重複ピッカーへ「戻る」
+      // 処理）を実行するが、以前はこれをrefreshBookings完了より先に行っていたため、
+      // まだ削除前の古いbookingsのままピッカーが「まだ2件重複している」と誤判定し、
+      // 削除して直したはずなのに同じピッカー画面に留まり続ける不具合があった。
+      return refreshBookings(true).then(function () {
+        hideLoading();
+        closeForm();
+        refreshOverlapStateAfterDelete_(restoreBody.equipment);
+        showUndoDeleteBanner_(restoreBody, res.message || '予約を削除しました。');
+      });
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
@@ -2117,6 +2269,12 @@
     row.appendChild(undoBtn);
     el.appendChild(row);
 
+    // 【2026/8/27追加】削除は他の機材の重複チェックまでは行わないため、削除の
+    // 前から別の機材で重複警告が出ていた場合、そのままではこの「元に戻す」
+    // バナーに上書きされて消えてしまっていた（実際にはまだ直っていないのに）。
+    // 「元に戻す」と合わせて、まだ残っている重複警告もここに表示しておく。
+    appendOverlapReminder_(el);
+
     el.className = 'show warn';
 
     var remaining = UNDO_DELETE_SECONDS;
@@ -2126,8 +2284,10 @@
       remaining -= 1;
       if (remaining <= 0) {
         clearInterval(countdownTimer);
-        // 他の操作で既に別のバナー内容に変わっている場合は消さない。
-        if (document.getElementById('status-banner').contains(undoBtn)) hideBanner();
+        // 他の操作で既に別のバナー内容に変わっている場合は触らない。
+        // 「元に戻す」の期限が切れたら、削除の確認表示は消すが、まだ重複が
+        // 残っている機材があれば、その警告だけは消さずに表示し続ける。
+        if (document.getElementById('status-banner').contains(undoBtn)) renderPersistentOverlapBanner_();
         return;
       }
       updateLabel();
@@ -2143,6 +2303,9 @@
           return;
         }
         refreshBookings(true);
+        // 復元（addBooking）はシート全体を再チェックしているので、その結果で
+        // pendingOverlapEquipmentを置き換える（他の機材の分もここで最新化される）。
+        setOverlapStateFromAuthoritative_(res);
         if (res.overlap) {
           showBanner('元に戻しました。\n\n' + (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
         } else {
@@ -2166,6 +2329,7 @@
         showBanner(res.error || 'ガントチャートの更新に失敗しました', 'error');
         return;
       }
+      setOverlapStateFromAuthoritative_(res);
       if (res.overlap) {
         showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
       } else {
@@ -2402,6 +2566,7 @@
   document.getElementById('f-category').addEventListener('change', function () {
     populateEquipmentSelect(this.value, '');
   });
+  document.getElementById('f-start').addEventListener('change', syncEndMonthToStart_);
   document.getElementById('f-project').addEventListener('change', function () {
     updateProjectCustomInputVisibility();
     if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
