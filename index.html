@@ -296,9 +296,13 @@
     transition: transform 0.1s ease-out;
   }
   .jump-chip:active { transform: scale(0.94); }
-  .jump-chip.inuse { background: #ffe3e8; color: #c81e42; }
-  .jump-chip.upcoming { background: #fff2da; color: #a35a00; }
-  .jump-chip.free { background: #dcf7ec; color: #0b8f61; }
+  /* 【2026/8/28再修正】前回は「文字の色」を丸マークと合わせていたが、それでは
+     ひと目で色が揃って見えない（背景が薄い色のままだった）とのご指摘のため、
+     機材名を囲んでいる背景そのものを丸マーク（.status-legend-dot）と同じ色で
+     塗りつぶす形に変更した（文字は白にして読みやすさを確保）。 */
+  .jump-chip.inuse { background: #c81e42; color: #fff; }
+  .jump-chip.upcoming { background: #a35a00; color: #fff; }
+  .jump-chip.free { background: #0b8f61; color: #fff; }
 
   .card.flash { box-shadow: 0 0 0 3px var(--blue); transition: box-shadow 0.2s ease-out; }
 
@@ -642,7 +646,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-28h';
+  var APP_BUILD_VERSION = '2026-08-28i';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
