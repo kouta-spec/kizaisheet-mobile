@@ -117,6 +117,15 @@
   }
   header button.icon-btn:hover { transform: scale(1.08); }
   header button.icon-btn:active { transform: scale(0.92); }
+  /* 【2026/8/29追加】重複警告の確認ボタン。ヘッダー右の設定ボタン（column3）とは
+     反対の左側（column1、今まで空いていた場所）に置くことで、両方が重ならないようにする。
+     重複がある間だけ表示し、機材名の件数をひと目で分かるようにテキスト付きの
+     ピル型ボタンにしている（他のicon-btnのような正方形の絵文字ボタンとは見た目を変える）。 */
+  #overlap-indicator-btn {
+    grid-column: 1; justify-self: start;
+    font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 20px;
+    background: #fff2da; color: #7a4b00; white-space: nowrap;
+  }
   .tabs {
     position: sticky; top: 0; z-index: 10;
     background: rgba(255,255,255,0.62);
@@ -485,6 +494,12 @@
 <div id="app">
   <header>
     <h1>機材シート2026</h1>
+    <!-- 【2026/8/29追加】期間重複の警告は、その時に出るポップ（バナー）が別の
+         通知（保存完了メッセージなど）に上書きされて消えてしまうと、直しきれて
+         いなくても気づけなくなってしまう、との指摘に対応。バナーとは別に、
+         重複が残っている間ずっと表示され続けるボタンをヘッダーに用意し、
+         いつでもタップして重複中の機材を確認できるようにする。 -->
+    <button class="icon-btn overlap-indicator-btn" id="overlap-indicator-btn" style="display:none;" title="重複の可能性がある機材を確認">⚠️</button>
     <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
   </header>
 
@@ -696,7 +711,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-29e';
+  var APP_BUILD_VERSION = '2026-08-29f';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -791,10 +806,31 @@
   }
 
   // ---------- 画面表示ヘルパー ----------
+  // 【2026/8/29追加】バナー（#status-banner）の「◯秒後に自動で消す」タイマーを
+  // 一元管理する。以前は各呼び出し箇所がそれぞればらばらにsetTimeout(hideBanner, 4000)
+  // を仕掛けていたため、次のような事故が起きえた：
+  //   1. 何も問題のない保存（例:「保存しました」）で4秒後の自動非表示を予約
+  //   2. その4秒が経つ前に、別の操作（例: まだ重複が直っていない編集の保存）で
+  //      重複警告バナーに切り替わる（この警告バナー自体には自動非表示は付けない）
+  //   3. しかし1.で予約していた古いタイマーが後からそのまま発火し、
+  //      本来消えてはいけない重複警告バナーまで意図せず消してしまう
+  // 「重複が直しきれていないのにポップが消えた」という報告は、これが原因だった
+  // 可能性が高い。新しいバナーを表示する・手動で消す、いずれのタイミングでも
+  // 必ず古いタイマーを解除するようにして、この事故を防ぐ。
+  var bannerHideTimer = null;
+  function clearBannerAutoHide_() {
+    if (bannerHideTimer) { clearTimeout(bannerHideTimer); bannerHideTimer = null; }
+  }
+  function scheduleBannerAutoHide_(ms) {
+    clearBannerAutoHide_();
+    bannerHideTimer = setTimeout(hideBanner, ms);
+  }
+
   // 【2026/8/27変更】期間重複の警告のときに「その機材のカレンダーを見る」ボタンを
   // 出せるよう、第3引数jumpNames（機材名の配列）を追加した。省略時は今まで通り
   // メッセージだけを表示する（他の呼び出し箇所の見た目は変わらない）。
   function showBanner(message, type, jumpNames) {
+    clearBannerAutoHide_(); // 新しい内容を表示するので、古い自動非表示タイマーは必ず解除する
     var el = document.getElementById('status-banner');
     el.innerHTML = '';
     var textEl = document.createElement('div');
@@ -856,6 +892,7 @@
     }, 50);
   }
   function hideBanner() {
+    clearBannerAutoHide_();
     document.getElementById('status-banner').className = '';
   }
 
@@ -865,6 +902,24 @@
   // として信頼できる。そのため、pendingOverlapEquipmentを丸ごと置き換える。
   function setOverlapStateFromAuthoritative_(res) {
     pendingOverlapEquipment = res.overlap ? extractOverlapEquipmentNames(res.overlapMessage) : [];
+    updateOverlapIndicator_();
+  }
+
+  // 【2026/8/29追加】画面上部の「⚠️ 重複◯件」ボタンの表示・非表示・件数を、
+  // pendingOverlapEquipmentの中身に合わせて更新する。この関数を、
+  // pendingOverlapEquipmentを書き換えるsetOverlapStateFromAuthoritative_と
+  // refreshOverlapStateAfterDelete_の中で必ず呼ぶことで、「保存完了メッセージなど
+  // 別の通知にバナーが上書きされて重複の警告が見えなくなった後も、このボタンだけは
+  // 重複が解消されるまでずっと画面に残り続ける」ようにしている。
+  function updateOverlapIndicator_() {
+    var btn = document.getElementById('overlap-indicator-btn');
+    if (!btn) return;
+    if (pendingOverlapEquipment.length > 0) {
+      btn.style.display = 'inline-block';
+      btn.textContent = '⚠️ 重複 ' + pendingOverlapEquipment.length + '件';
+    } else {
+      btn.style.display = 'none';
+    }
   }
 
   // 【2026/8/27追加】削除は速度優先でシート全体の重複チェックを行っていないため、
@@ -884,6 +939,7 @@
     } else {
       if (idx !== -1) pendingOverlapEquipment.splice(idx, 1);
     }
+    updateOverlapIndicator_();
   }
 
   // 【2026/8/27追加】pendingOverlapEquipmentの内容を、指定した要素の中に
@@ -916,6 +972,7 @@
   // 続ける。残っていなければバナー自体を消す。
   function renderPersistentOverlapBanner_() {
     if (!pendingOverlapEquipment.length) { hideBanner(); return; }
+    clearBannerAutoHide_(); // 重複が残っている間は自動で消えてほしくないため、古いタイマーがあれば解除する
     var el = document.getElementById('status-banner');
     el.innerHTML = '';
     appendOverlapReminder_(el);
@@ -1905,16 +1962,23 @@
       // mc-selected-ring（枠線）で示す。こうしないと、重複を直そうとして開いた
       // 編集フォームでは自分の予約日＝選択中の期間になるため、肝心の重複表示が
       // 選択色（青）に隠れてしまい、何が重複しているのか分からなくなってしまう。
+      // 【2026/8/29再修正】新規追加フォームで機材を連続して選ぶとき、直前の機材の
+      // 開始日・終了日がそのまま引き継がれるのは便利だが、新しく選んだ機材に
+      // 「その日はすでに他の予約がある（＝booked）」場合でも、以前は選択中の青い色が
+      // 予約ありの赤い色を上書きしてしまい、被っていることに気づけなかった。
+      // 重複(isOverlapDay)と同じ考え方で、booked（予約あり）も背景を必ず優先させ、
+      // 選択中であることはmc-selected-ringの枠線だけで示すようにした。
       var cls = 'mc-cell';
       if (isOverlapDay) {
         cls += ' mc-overlap';
+        if (isEndpoint || inSelectedRange) cls += ' mc-selected-ring';
+      } else if (booked) {
+        cls += ' mc-booked';
         if (isEndpoint || inSelectedRange) cls += ' mc-selected-ring';
       } else if (isEndpoint) {
         cls += ' mc-select-endpoint';
       } else if (inSelectedRange) {
         cls += ' mc-select-range';
-      } else if (booked) {
-        cls += ' mc-booked';
       }
       if (dStr === todayStrVal) cls += ' mc-today';
       var cell = document.createElement('div');
@@ -2370,7 +2434,7 @@
           showBanner(res.warning, 'warn');
         } else {
           showBanner(res.message || '保存しました。', 'info');
-          setTimeout(hideBanner, 4000);
+          scheduleBannerAutoHide_(4000);
         }
       });
     }).catch(function (err) {
@@ -2448,7 +2512,7 @@
         errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
         var hasIssue = (res.overlap || res.warning || errorMessages.length > 0);
         showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(res.overlapMessage || ''));
-        if (!hasIssue) setTimeout(hideBanner, 4000);
+        if (!hasIssue) scheduleBannerAutoHide_(4000);
       });
     }).catch(function (err) {
       hideLoading();
@@ -2589,7 +2653,7 @@
           showBanner('元に戻しました。\n\n' + (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
         } else {
           showBanner('元に戻しました。', 'info');
-          setTimeout(hideBanner, 4000);
+          scheduleBannerAutoHide_(4000);
         }
       }).catch(function (err) {
         showBanner('通信エラー: ' + err.message, 'error');
@@ -2613,7 +2677,7 @@
         showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
       } else {
         showBanner(res.message || 'ガントチャートを更新しました。', 'info');
-        setTimeout(hideBanner, 4000);
+        scheduleBannerAutoHide_(4000);
       }
     }).catch(function (err) {
       hideLoading();
@@ -2871,6 +2935,9 @@
   }
 
   document.getElementById('settings-btn').addEventListener('click', openSettings);
+  // 【2026/8/29追加】ヘッダーの「⚠️ 重複◯件」ボタン。タップすると、他の通知に
+  // 上書きされて消えてしまっていても、いつでも重複中の機材一覧をバナーに出し直せる。
+  document.getElementById('overlap-indicator-btn').addEventListener('click', renderPersistentOverlapBanner_);
   document.getElementById('settings-cancel').addEventListener('click', closeSettings);
   document.getElementById('settings-save').addEventListener('click', saveSettingsAndConnect);
   document.getElementById('settings-disconnect').addEventListener('click', disconnectSettings);
