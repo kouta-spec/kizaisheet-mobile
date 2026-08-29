@@ -474,6 +474,13 @@
   .selected-eq-row:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(67,97,238,0.14); }
   .selected-eq-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
   .selected-eq-name { font-size: 14px; font-weight: 700; color: var(--text); }
+  /* 【2026/8/29追加】追加済みリスト内で機材名をその場で編集できるようにした入力欄。
+     見た目は元のspan表示に近づけつつ、編集可能であることが分かるよう枠線を付けている。 */
+  .selected-eq-name-input {
+    font-size: 14px; font-weight: 700; color: var(--text); flex: 1 1 auto; min-width: 0;
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; background: #fff;
+  }
+  .selected-eq-name-input:focus { outline: none; border-color: var(--blue-dark); }
   .selected-eq-remove {
     background: none; border: none; color: var(--red); font-size: 13px; font-weight: 700;
     cursor: pointer; padding: 4px 6px; flex: 0 0 auto; transition: transform 0.1s ease-out;
@@ -731,7 +738,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-29i';
+  var APP_BUILD_VERSION = '2026-08-29j';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2265,9 +2272,19 @@
 
       var head = document.createElement('div');
       head.className = 'selected-eq-head';
-      var nameEl = document.createElement('span');
-      nameEl.className = 'selected-eq-name';
-      nameEl.textContent = row.equipment;
+      // 【2026/8/29追加】追加済みリストの中でも機材名をその場で編集できるようにした。
+      // 他のレンタル会社から同種の機材を借りた際など、一覧から選んで追加した機材名を
+      // 少しだけ書き換えたい（例:「カメラA」→「カメラA（Y社レンタル）」）ケースに対応。
+      // 金額（価格）は機材リストの金額列側で、発注先が入っている行のみ元の機材名との
+      // 部分一致（あいまい一致）でも価格参照シートと突き合わせる仕組みになっているため、
+      // 元の機材名に近い表記のまま書き換えると金額が自動で入りやすい。
+      var nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.className = 'selected-eq-name-input';
+      nameInput.value = row.equipment;
+      nameInput.addEventListener('input', function () {
+        selectedEquipmentRows[idx].equipment = nameInput.value;
+      });
       var removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.className = 'selected-eq-remove';
@@ -2276,7 +2293,7 @@
         selectedEquipmentRows.splice(idx, 1);
         renderSelectedEquipmentList();
       });
-      head.appendChild(nameEl);
+      head.appendChild(nameInput);
       head.appendChild(removeBtn);
       box.appendChild(head);
 
@@ -2535,6 +2552,12 @@
     }
     for (var i = 0; i < selectedEquipmentRows.length; i++) {
       var row0 = selectedEquipmentRows[i];
+      // 【2026/8/29追加】追加後にリスト内で機材名を編集できるようになったため、
+      // 空にしたまま保存しようとしていないかをここで確認する。
+      if (!row0.equipment || !row0.equipment.trim()) {
+        showFormError((i + 1) + '件目の機材名を入力してください。');
+        return;
+      }
       if (!row0.startDate || !row0.endDate) {
         showFormError('「' + row0.equipment + '」の開始日・終了日を入力してください。');
         return;
@@ -2549,7 +2572,7 @@
     // 積み重なるため）。まとめて1回の通信（addBookingsBatch）で送るように変更した。
     var items = selectedEquipmentRows.map(function (row) {
       return {
-        equipment: row.equipment,
+        equipment: row.equipment.trim(),
         quantity: row.quantity ? Number(row.quantity) : undefined,
         supplier: row.supplier,
         startDate: row.startDate,
