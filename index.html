@@ -602,8 +602,9 @@
       <select id="f-category"><option value="">（読み込み中...）</option></select>
     </div>
     <div class="field">
-      <label>機材名（マスターガントチャートの一覧から選択）</label>
+      <label>機材名（一覧から選ぶか、「＋新しい機材名を入力」で自由入力）</label>
       <select id="f-equipment"><option value="">（読み込み中...）</option></select>
+      <input type="text" id="f-equipment-custom" placeholder="新しい機材名を入力" style="display:none; margin-top:6px;">
     </div>
     <!-- 【2026/8/29追加】機材名を選ぶと、その機材の予約状況（空き・使用中）を
          ミニカレンダーで確認しながら、日付をタップして開始日・終了日を選べるように
@@ -730,7 +731,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-29h';
+  var APP_BUILD_VERSION = '2026-08-29i';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -754,6 +755,22 @@
   var supplierList = []; // 発注先の候補（機材リストF列のプルダウンに設定されているレンタル会社名）
   var projectList = []; // 作品名の候補（機材リストに既に登録されている作品名。新規入力も可）
   var PROJECT_CUSTOM_VALUE = '__custom_project__';
+  // 【2026/8/29追加】機材名も作品名と同じく、マスターガントチャートの一覧に無い
+  // 機材（外部レンタル品など）を自由入力で追加できるようにするための特殊値。
+  var EQUIPMENT_CUSTOM_VALUE = '__custom_equipment__';
+  // 自由入力で追加された機材（マスターガントチャートの一覧に無い機材名）を、機材
+  // 使用状況タブでまとめて表示する専用グループの名前。
+  var FREE_EQUIPMENT_GROUP_NAME = '自由入力の機材（一覧未登録）';
+
+  // allNames（予約データに実在する全機材名）のうち、マスターガントチャートの
+  // どのカテゴリにも属していない（＝自由入力で追加された）ものだけを返す。
+  function computeFreeEquipmentNames_(allNames) {
+    var categorized = {};
+    categoryOrder.forEach(function (cat) {
+      (equipmentByCategory[cat] || []).forEach(function (n) { categorized[n] = true; });
+    });
+    return allNames.filter(function (n) { return !categorized[n]; });
+  }
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
   var selectedEquipmentRows = []; // 新規追加フォームで「リストに追加」済みの機材（{equipment, quantity, supplier}の配列）
   var currentView = 'bookings'; // 'bookings' または 'equipment'
@@ -1342,6 +1359,14 @@
     if (categoryOrder.length > 0) {
       groupOrder = categoryOrder.slice();
       groupOrder.forEach(function (cat) { namesByGroup[cat] = equipmentByCategory[cat].slice(); });
+      // 【2026/8/29追加】機材名を自由入力できるようになったことに伴い、マスター
+      // ガントチャートの一覧には無いが実際に予約データがある機材名（allNamesには
+      // 含まれる）を、埋もれさせず専用グループにまとめて表示する。
+      var freeNames = computeFreeEquipmentNames_(allNames);
+      if (freeNames.length > 0) {
+        groupOrder.push(FREE_EQUIPMENT_GROUP_NAME);
+        namesByGroup[FREE_EQUIPMENT_GROUP_NAME] = freeNames;
+      }
     } else {
       groupOrder = ['全機材'];
       namesByGroup['全機材'] = allNames.slice();
@@ -1564,7 +1589,14 @@
   // ときに使う（保存・編集した内容が反映された状態で開ける）。
   function reopenEquipmentDetailByCategory_(categoryName) {
     var built = buildEquipmentStatusMap();
-    var names = (categoryName && equipmentByCategory[categoryName]) ? equipmentByCategory[categoryName] : built.allNames;
+    var names;
+    if (categoryName === FREE_EQUIPMENT_GROUP_NAME) {
+      // 【2026/8/29追加】自由入力の機材グループから開いた予約フォームなどから
+      // 「戻る」で戻ってきたときも、同じ絞り込み（一覧未登録の機材だけ）で開き直す。
+      names = computeFreeEquipmentNames_(built.allNames);
+    } else {
+      names = (categoryName && equipmentByCategory[categoryName]) ? equipmentByCategory[categoryName] : built.allNames;
+    }
     openEquipmentCategoryDetail(categoryName || '全機材', names, built.byEquipment);
   }
 
@@ -1852,13 +1884,41 @@
     // 現在の値が絞り込み後の候補に無い場合（表記ゆれ等でマスターガントチャートと
     // 一致しない既存データを編集で開いたときなど）も、勝手に空欄へ変えてしまわず
     // そのまま選べる選択肢として残しておく。
-    if (current && names.indexOf(current) === -1) {
+    if (current && current !== EQUIPMENT_CUSTOM_VALUE && names.indexOf(current) === -1) {
       var extra = document.createElement('option');
       extra.value = current;
       extra.textContent = '⚠ ' + current + '（一覧に見つかりません）';
       sel.appendChild(extra);
     }
-    sel.value = current || '';
+    // 【2026/8/29追加】一覧に無い機材名も自由入力で予約できるようにするための選択肢。
+    var customOpt = document.createElement('option');
+    customOpt.value = EQUIPMENT_CUSTOM_VALUE;
+    customOpt.textContent = '＋新しい機材名を入力...';
+    sel.appendChild(customOpt);
+    sel.value = (current === EQUIPMENT_CUSTOM_VALUE) ? EQUIPMENT_CUSTOM_VALUE : (current || '');
+    updateEquipmentCustomInputVisibility();
+  }
+
+  function updateEquipmentCustomInputVisibility() {
+    var sel = document.getElementById('f-equipment');
+    var customInput = document.getElementById('f-equipment-custom');
+    if (sel.value === EQUIPMENT_CUSTOM_VALUE) {
+      customInput.style.display = '';
+    } else {
+      customInput.style.display = 'none';
+      customInput.value = '';
+    }
+  }
+
+  // 機材名は「一覧から選ぶ（#f-equipment）」か「＋新しい機材名を入力を選んで
+  // #f-equipment-customに自由入力する」かのどちらかで指定される。実際に使う機材名の
+  // 文字列は、常にこの関数を通して取得する（保存・追加・カレンダー表示すべてで共通）。
+  function getSelectedEquipmentName_() {
+    var sel = document.getElementById('f-equipment');
+    if (sel.value === EQUIPMENT_CUSTOM_VALUE) {
+      return document.getElementById('f-equipment-custom').value.trim();
+    }
+    return sel.value.trim();
   }
 
   function findCategoryForEquipment(name) {
@@ -2048,7 +2108,7 @@
       document.getElementById('f-end').value = toDateInputValue(dateStr);
       formCalRangeStart = null;
     }
-    var equipmentName = document.getElementById('f-equipment').value.trim();
+    var equipmentName = getSelectedEquipmentName_();
     renderFormMiniCalendarMonth_(equipmentName);
   }
 
@@ -2123,10 +2183,10 @@
   // 機材ごとに個別入力する（開始日・終了日・備考は、追加した瞬間はフォーム上部に
   // 入力済みの内容をコピーした初期値になり、そのあとリスト側で個別に編集できる）。
   function addSelectedEquipment() {
-    var equipment = document.getElementById('f-equipment').value.trim();
-    if (!equipment) { showEquipmentAddError('機材名を選択してください'); return; }
-    if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
-      showEquipmentAddError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
+    var equipment = getSelectedEquipmentName_();
+    if (!equipment) {
+      var isCustomMode = document.getElementById('f-equipment').value === EQUIPMENT_CUSTOM_VALUE;
+      showEquipmentAddError(isCustomMode ? '機材名を入力してください' : '機材名を選択してください');
       return;
     }
     var already = selectedEquipmentRows.some(function (row) { return row.equipment === equipment; });
@@ -2415,15 +2475,11 @@
 
   // 編集（既存の1件）は今まで通り、1回のAPI呼び出しで更新する。
   function submitSingleEditBooking(project, start, end, note) {
-    var equipment = document.getElementById('f-equipment').value.trim();
+    var equipment = getSelectedEquipmentName_();
     var quantity = document.getElementById('f-quantity').value.trim();
     var supplier = document.getElementById('f-supplier').value;
 
-    if (!equipment) { showFormError('機材名を選択してください'); return; }
-    if (equipmentList.length > 0 && equipmentList.indexOf(equipment) === -1) {
-      showFormError('機材名がマスターガントチャートの一覧と一致しません。候補から選び直してください。');
-      return;
-    }
+    if (!equipment) { showFormError('機材名を選択、または入力してください'); return; }
 
     var body = {
       action: 'updateBooking',
@@ -2479,10 +2535,6 @@
     }
     for (var i = 0; i < selectedEquipmentRows.length; i++) {
       var row0 = selectedEquipmentRows[i];
-      if (equipmentList.length > 0 && equipmentList.indexOf(row0.equipment) === -1) {
-        showFormError('「' + row0.equipment + '」がマスターガントチャートの一覧と一致しません。選び直してください。');
-        return;
-      }
       if (!row0.startDate || !row0.endDate) {
         showFormError('「' + row0.equipment + '」の開始日・終了日を入力してください。');
         return;
@@ -2562,7 +2614,7 @@
       project: (document.getElementById('f-project').value === PROJECT_CUSTOM_VALUE)
         ? document.getElementById('f-project-custom').value.trim()
         : document.getElementById('f-project').value,
-      equipment: document.getElementById('f-equipment').value.trim(),
+      equipment: getSelectedEquipmentName_(),
       quantity: (function () {
         var q = document.getElementById('f-quantity').value.trim();
         return q ? Number(q) : undefined;
@@ -2985,7 +3037,20 @@
   // 【2026/8/29追加】機材名を選ぶ・変えるたびに、その機材の予約状況ミニカレンダーを
   // 表示・更新する。
   document.getElementById('f-equipment').addEventListener('change', function () {
+    updateEquipmentCustomInputVisibility();
+    if (this.value === EQUIPMENT_CUSTOM_VALUE) {
+      document.getElementById('f-equipment-custom').focus();
+      showFormMiniCalendar_('', ''); // まだ機材名を入力していないので一旦隠す
+      return;
+    }
     var val = this.value.trim();
+    if (!val) { showFormMiniCalendar_('', ''); return; }
+    showFormMiniCalendar_(val, fromDateInputValue(document.getElementById('f-start').value));
+  });
+  // 【2026/8/29追加】自由入力欄に機材名を打つたびに、ミニカレンダーもすぐ更新する
+  // （同名の機材が既にあれば、その場で予約状況が見える）。
+  document.getElementById('f-equipment-custom').addEventListener('input', function () {
+    var val = getSelectedEquipmentName_();
     if (!val) { showFormMiniCalendar_('', ''); return; }
     showFormMiniCalendar_(val, fromDateInputValue(document.getElementById('f-start').value));
   });
@@ -2993,12 +3058,12 @@
     e.stopPropagation();
     if (this.disabled) return;
     formCalMonth--; if (formCalMonth < 0) { formCalMonth = 11; formCalYear--; }
-    renderFormMiniCalendarMonth_(document.getElementById('f-equipment').value.trim());
+    renderFormMiniCalendarMonth_(getSelectedEquipmentName_());
   });
   document.getElementById('form-mc-next').addEventListener('click', function (e) {
     e.stopPropagation();
     formCalMonth++; if (formCalMonth > 11) { formCalMonth = 0; formCalYear++; }
-    renderFormMiniCalendarMonth_(document.getElementById('f-equipment').value.trim());
+    renderFormMiniCalendarMonth_(getSelectedEquipmentName_());
   });
   document.getElementById('f-start').addEventListener('change', syncEndMonthToStart_);
   // 【2026/8/29追加】開始日・終了日をテキスト/カレンダーピッカーで直接書き換えた
