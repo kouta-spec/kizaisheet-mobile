@@ -81,8 +81,21 @@
     border-radius: 0 0 20px 20px;
     box-shadow: 0 6px 16px rgba(67, 97, 238, 0.28);
   }
+  /* 【2026/8/29追加】ヘッダーにアプリのアイコンロゴ（icon-192.png、ホーム画面の
+     ショートカットアイコンと同じ画像）を表示したいとの要望に対応。タイトル文字と
+     まとめて1つの中央配置グループにするため、直接のグリッド子要素はこの
+     .header-title-groupにして、中でロゴ画像とh1を横並びにする。 */
+  .header-title-group {
+    grid-column: 2; justify-self: center;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .header-logo {
+    flex: 0 0 auto;
+    width: 28px; height: 28px; border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.28);
+  }
   header h1 {
-    grid-column: 2; justify-self: center; text-align: center;
+    text-align: center;
     font-size: 18px; margin: 0; font-weight: 800; letter-spacing: 0.2px;
   }
   /* 【2026/8/27追加】通信中であることをアプリ全体で分かりやすくするための
@@ -493,7 +506,13 @@
 <div id="bg-layer"></div>
 <div id="app">
   <header>
-    <h1>機材シート2026</h1>
+    <div class="header-title-group">
+      <!-- 【2026/8/29追加】ホーム画面のショートカットと同じアイコン画像
+           （icon-192.png）をヘッダーにも表示する。読み込みに失敗した場合は
+           見た目が崩れないよう、その場で自分自身を非表示にする。 -->
+      <img src="icon-192.png" alt="" class="header-logo" onerror="this.style.display='none';">
+      <h1>機材シート2026</h1>
+    </div>
     <!-- 【2026/8/29追加】期間重複の警告は、その時に出るポップ（バナー）が別の
          通知（保存完了メッセージなど）に上書きされて消えてしまうと、直しきれて
          いなくても気づけなくなってしまう、との指摘に対応。バナーとは別に、
@@ -711,7 +730,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-29f';
+  var APP_BUILD_VERSION = '2026-08-29g';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
