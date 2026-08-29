@@ -72,6 +72,11 @@
  */
 
 // ==================== 設定 ====================
+// 【2026/8/29追加】コードを貼り替えたときに「今回渡した内容が本当に反映されたか」を
+// メニューの「コードの動作確認」ですぐ確認できるようにするための版数表記。
+// Code.gs / MobileApi.gs / PriceData.gs / UsageGuide.gs のいずれかを貼り替えたときは、
+// このファイル（Code.gs）側の値も一緒に更新している（詳しくはrunSelfCheck_を参照）。
+const GAS_BUILD_VERSION = '2026-08-29a';
 const GANTT_SHEET_NAME = "マスターガントチャート";
 const BOOKING_SHEET_NAME = "機材リスト";
 const GANTT_START_COL_LETTER = "E";
@@ -136,7 +141,83 @@ function onOpen() {
     .addItem('機材使用率を集計', 'updateEquipmentUsageRate')
     .addSeparator()
     .addItem('使用方法タブを作成・更新', 'setupUsageGuideSheet')
+    .addSeparator()
+    .addItem('コードの動作確認', 'runSelfCheck_')
     .addToUi();
+}
+
+/**
+ * 【2026/8/29追加】コードを貼り替えた（Code.gs / MobileApi.gs / PriceData.gs /
+ * UsageGuide.gsのいずれかを選択→削除→貼り付け→保存した）直後に、このメニューから
+ * 実行することで「必要な関数・シートが全部揃っているか」をその場で確認できる。
+ *
+ * これまで、貼り替えを一部だけ忘れた（例: MobileApi.gsだけ古いまま）ことに
+ * 数日気付かず、「PC側の操作がアクセスログに記録されない」といった不具合として
+ * 発覚したことがあった。貼り替え直後にこれを実行する習慣をつけることで、
+ * その場で「◯◯という関数が見つかりません」とすぐ分かるようにするための機能。
+ *
+ * typeof を使っているのは、万一その関数名がどのファイルにも存在しない場合でも
+ * エラーで止まらず安全に「見つからない」と判定できるため。
+ */
+function runSelfCheck_() {
+  var ui = SpreadsheetApp.getUi();
+
+  var checks = [
+    // Code.gs
+    ['onOpen（Code.gs）', typeof onOpen === 'function'],
+    ['onEditInstallable（Code.gs）', typeof onEditInstallable === 'function'],
+    ['handleGanttTriggerEdit（Code.gs）', typeof handleGanttTriggerEdit === 'function'],
+    ['getPcEditorName_（Code.gs）', typeof getPcEditorName_ === 'function'],
+    ['updateAllGanttCore（Code.gs）', typeof updateAllGanttCore === 'function'],
+    ['updateEquipmentUsageRate（Code.gs）', typeof updateEquipmentUsageRate === 'function'],
+    // MobileApi.gs
+    ['doGet（MobileApi.gs）', typeof doGet === 'function'],
+    ['doPost（MobileApi.gs）', typeof doPost === 'function'],
+    ['logMobileAccess_（MobileApi.gs）', typeof logMobileAccess_ === 'function'],
+    ['ensureMobileLogAnnotation_（MobileApi.gs）', typeof ensureMobileLogAnnotation_ === 'function'],
+    ['addMobileBooking_（MobileApi.gs）', typeof addMobileBooking_ === 'function'],
+    ['addMobileBookingsBatch_（MobileApi.gs）', typeof addMobileBookingsBatch_ === 'function'],
+    ['updateMobileBooking_（MobileApi.gs）', typeof updateMobileBooking_ === 'function'],
+    ['deleteMobileBooking_（MobileApi.gs）', typeof deleteMobileBooking_ === 'function'],
+    ['findMobileGroupInsertRow_（MobileApi.gs）', typeof findMobileGroupInsertRow_ === 'function'],
+    ['refreshMobileGanttChart_（MobileApi.gs）', typeof refreshMobileGanttChart_ === 'function'],
+    // PriceData.gs
+    ['updatePricesAndTotals（PriceData.gs）', typeof updatePricesAndTotals === 'function'],
+    ['importVendorPriceData（PriceData.gs）', typeof importVendorPriceData === 'function'],
+    // UsageGuide.gs
+    ['setupUsageGuideSheet（UsageGuide.gs）', typeof setupUsageGuideSheet === 'function']
+  ];
+  var missing = checks.filter(function (c) { return !c[1]; }).map(function (c) { return c[0]; });
+
+  var requiredSheets = [GANTT_SHEET_NAME, BOOKING_SHEET_NAME, 'アクセスログ', '機材使用率'];
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var missingSheets = requiredSheets.filter(function (name) { return !ss.getSheetByName(name); });
+
+  var lines = [];
+  lines.push('コードのバージョン（Code.gs）: ' + GAS_BUILD_VERSION);
+  lines.push('');
+
+  if (missing.length === 0 && missingSheets.length === 0) {
+    lines.push('✅ 必要な関数・シートはすべて揃っています。');
+  } else {
+    lines.push('⚠️ 問題が見つかりました。どれかのファイルの貼り替えが');
+    lines.push('　一部だけになっている可能性があります。');
+    if (missing.length) {
+      lines.push('');
+      lines.push('見つからない関数（' + missing.length + '件）:');
+      lines.push(missing.join('\n'));
+    }
+    if (missingSheets.length) {
+      lines.push('');
+      lines.push('見つからないシート（' + missingSheets.length + '件）:');
+      lines.push(missingSheets.join('、'));
+    }
+    lines.push('');
+    lines.push('→ 該当するファイルを開き直し、「全て選択→削除→渡された内容を貼り付け→保存」を');
+    lines.push('　やり直してから、もう一度この「コードの動作確認」を実行してください。');
+  }
+
+  ui.alert('コードの動作確認', lines.join('\n'), ui.ButtonSet.OK);
 }
 
 
@@ -1414,22 +1495,29 @@ function updateEquipmentUsageRate() {
     usageSheet.clear();
   }
 
-  usageSheet.getRange(1, 1, 1, 3).setValues([[
+  // 【2026/8/28修正】「機材名」の並び順が何を基準にしているか分かりにくいという
+  // 指摘があり、いったんセルの注釈（マウスを乗せないと見えない吹き出し）で対応した
+  // ものの、それでは見落としやすいとのことだったので、ヘッダー行のすぐ上に
+  // 常に見える注記の行として1行追加する方式に変更した（見出し・データ行は1行ずつ
+  // 下にずれる）。
+  usageSheet.getRange(1, 1, 1, 3).merge();
+  usageSheet.getRange(1, 1).setValue(
+    '※ 機材名の並び順は、マスターガントチャートの「機材名」列と同じ順番です（使用率が高い順などへの並べ替えは行っていません）。' +
+    'この一覧は自動更新されません。最新の状態にしたいときはメニューの「機材使用率を集計」を実行してください。'
+  );
+  usageSheet.getRange(1, 1).setFontStyle('italic').setFontColor('#5b5f7a').setFontSize(10)
+    .setWrap(true).setVerticalAlignment('middle');
+  usageSheet.setRowHeight(1, 34);
+
+  usageSheet.getRange(2, 1, 1, 3).setValues([[
     '機材名', currentYear + '年の予約日数', '使用率(%)'
   ]]);
-  usageSheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e8eaed');
-  usageSheet.setFrozenRows(1);
-  // 【2026/8/28追加】「機材名」の並び順が何を基準にしているか分かりにくいという
-  // 指摘があったため、ヘッダーセルに注釈（セルの右上にマウスを乗せると出る吹き出し）
-  // を付けた。使用率順などへの並べ替えは行っていないことも合わせて明記する。
-  usageSheet.getRange(1, 1).setNote(
-    '機材名の並び順は、マスターガントチャートの「機材名」列と同じ順番です（使用率が高い順などへの並べ替えは行っていません）。\n' +
-    'この一覧は自動では更新されません。最新の状態にしたいときは、メニューの「機材使用率を集計」を実行してください。'
-  );
+  usageSheet.getRange(2, 1, 1, 3).setFontWeight('bold').setBackground('#e8eaed');
+  usageSheet.setFrozenRows(2);
 
   if (rows.length > 0) {
-    usageSheet.getRange(2, 1, rows.length, 3).setValues(rows);
-    usageSheet.getRange(2, 3, rows.length, 1).setNumberFormat('0.0"%"');
+    usageSheet.getRange(3, 1, rows.length, 3).setValues(rows);
+    usageSheet.getRange(3, 3, rows.length, 1).setNumberFormat('0.0"%"');
   }
   usageSheet.setColumnWidth(1, 260);
   usageSheet.setColumnWidth(2, 160);
