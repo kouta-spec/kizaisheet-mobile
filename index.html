@@ -248,6 +248,11 @@
     color: white; font-weight: 800; box-shadow: 0 0 0 2px #8a0f2b inset;
   }
   .mc-cell.mc-today { box-shadow: 0 0 0 2px var(--blue) inset; font-weight: 800; }
+  /* 【2026/8/29追加】予約フォーム内のミニカレンダーで、タップして選んだ開始日・
+     終了日（と、その間の日）を示す色。既存の「予約あり（赤）」「重複（縞模様）」とは
+     別の色（青系）にして、見分けやすくしている。 */
+  .mc-cell.mc-select-endpoint { background: var(--blue); color: white; font-weight: 800; box-shadow: 0 0 0 2px var(--blue-dark) inset; }
+  .mc-cell.mc-select-range { background: var(--tint2); color: var(--blue-dark); font-weight: 700; }
 
   /* 【2026/8/28修正】以前はこのカード左端の色にvar(--red)/var(--orange)/var(--green)
      （明るめの汎用カラー）を使っていたが、同じ「使用中／予約あり／空き」を表す
@@ -529,6 +534,41 @@
       <select id="f-project"><option value="">（作品名を読み込み中...）</option></select>
       <input type="text" id="f-project-custom" placeholder="新しい作品名を入力" style="display:none; margin-top:6px;">
     </div>
+    <div class="field">
+      <label>カテゴリで絞り込む（任意）</label>
+      <select id="f-category"><option value="">（読み込み中...）</option></select>
+    </div>
+    <div class="field">
+      <label>機材名（マスターガントチャートの一覧から選択）</label>
+      <select id="f-equipment"><option value="">（読み込み中...）</option></select>
+    </div>
+    <!-- 【2026/8/29追加】機材名を選ぶと、その機材の予約状況（空き・使用中）を
+         ミニカレンダーで確認しながら、日付をタップして開始日・終了日を選べるように
+         した（機材の状況タブのミニカレンダーと同じ見た目）。テキスト・カレンダー
+         ピッカーでの入力も引き続きそのまま使える。 -->
+    <div class="field" id="form-mini-cal-field" style="display:none;">
+      <label>この機材の予約状況（タップで開始日→終了日を選べます）</label>
+      <div class="mini-cal" id="form-mini-cal" style="margin-top:6px; padding-top:0; border-top:none;">
+        <div class="mini-cal-nav">
+          <button type="button" class="mc-prev" id="form-mc-prev">‹</button>
+          <span class="mc-label" id="form-mc-label"></span>
+          <button type="button" class="mc-next" id="form-mc-next">›</button>
+        </div>
+        <div class="mini-cal-grid" id="form-mc-grid"></div>
+      </div>
+      <div class="hint" id="form-mc-hint" style="margin-top:6px;">開始日をタップしてください。</div>
+    </div>
+    <!-- 編集時（既存の1件のみ）はここで数量・発注先を直接入力 -->
+    <div id="single-equipment-fields" class="field-row">
+      <div class="field">
+        <label>数量</label>
+        <input type="number" id="f-quantity" min="1" placeholder="1">
+      </div>
+      <div class="field">
+        <label>発注先</label>
+        <select id="f-supplier"><option value="">（自社在庫・セット機材）</option></select>
+      </div>
+    </div>
     <div class="field-row">
       <div class="field">
         <label>開始日</label>
@@ -545,25 +585,6 @@
     </div>
     <div class="hint" id="multi-date-hint" style="margin-top:-8px;">
       ↑ここで入力した開始日・終了日・備考は、下で機材を「リストに追加」するときの初期値になります。追加したあとは機材ごとに個別に変更できます。
-    </div>
-    <div class="field">
-      <label>カテゴリで絞り込む（任意）</label>
-      <select id="f-category"><option value="">（読み込み中...）</option></select>
-    </div>
-    <div class="field">
-      <label>機材名（マスターガントチャートの一覧から選択）</label>
-      <select id="f-equipment"><option value="">（読み込み中...）</option></select>
-    </div>
-    <!-- 編集時（既存の1件のみ）はここで数量・発注先を直接入力 -->
-    <div id="single-equipment-fields" class="field-row">
-      <div class="field">
-        <label>数量</label>
-        <input type="number" id="f-quantity" min="1" placeholder="1">
-      </div>
-      <div class="field">
-        <label>発注先</label>
-        <select id="f-supplier"><option value="">（自社在庫・セット機材）</option></select>
-      </div>
     </div>
     <!-- 新規追加時：カテゴリ→機材名を選んで「リストに追加」を押すたびに、下に
          選択済み機材カード（機材ごとの数量・発注先入力）が積み上がっていく。
@@ -646,7 +667,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-28i';
+  var APP_BUILD_VERSION = '2026-08-29a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -673,6 +694,11 @@
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
   var selectedEquipmentRows = []; // 新規追加フォームで「リストに追加」済みの機材（{equipment, quantity, supplier}の配列）
   var currentView = 'bookings'; // 'bookings' または 'equipment'
+
+  // 【2026/8/29追加】予約フォーム内のミニカレンダー（機材名を選ぶと、その機材の
+  // 予約状況を見ながら日付をタップして開始日・終了日を選べる）の表示状態。
+  var formCalYear = null, formCalMonth = null; // 現在表示中の年・月（nullなら未初期化）
+  var formCalRangeStart = null; // 1回目のタップで選んだ開始日（"YYYY/MM/DD"）。2回目のタップ待ちのときだけ値が入る。
 
   // 【2026/8/27追加】「戻る」を押したときに一つ前の画面（詳細シート）へ正しく
   // 戻れるようにするための仕組み。予約フォーム・作品詳細シート（重複時の
@@ -1738,6 +1764,139 @@
     return '';
   }
 
+  // ---------- 予約フォーム内のミニカレンダー（機材の予約状況＋タップで期間選択） ----------
+  // 【2026/8/29追加】機材名を選ぶと、その機材の予約状況（空き・使用中）をミニ
+  // カレンダーで見ながら、日付をタップして開始日→終了日を選べるようにした
+  // （機材の状況タブのミニカレンダーと同じ見た目・同じ考え方）。テキスト入力・
+  // カレンダーピッカーでの開始日・終了日入力も、これまで通りそのまま使える
+  // （どちらで入力してもfield-start/f-endの値は同じで、もう片方の表示にも反映される）。
+
+  /**
+   * 機材名を選んだ・編集フォームを開いたときに呼ぶ。指定した機材の予約状況を
+   * ミニカレンダーで表示する。equipmentNameが空ならカレンダーごと隠す。
+   * baseDateStr（"YYYY/MM/DD"、省略可）を渡すと、その日を含む月を最初に表示する。
+   */
+  function showFormMiniCalendar_(equipmentName, baseDateStr) {
+    var wrap = document.getElementById('form-mini-cal-field');
+    if (!equipmentName) {
+      wrap.style.display = 'none';
+      formCalRangeStart = null;
+      formCalYear = null;
+      formCalMonth = null;
+      return;
+    }
+    wrap.style.display = 'block';
+    var base = baseDateStr ? parseSlashDateParts_(baseDateStr) : null;
+    var now = new Date();
+    formCalYear = base ? base.y : now.getFullYear();
+    formCalMonth = base ? base.m : now.getMonth();
+    formCalRangeStart = null;
+    renderFormMiniCalendarMonth_(equipmentName);
+  }
+
+  // 月をまたがず、今表示中の内容だけを今の入力状態に合わせて描き直す（開始日・
+  // 終了日を手で書き換えたときなどに使う。カレンダーがまだ出ていない場合は
+  // showFormMiniCalendar_で最初から開く）。
+  function refreshFormMiniCalendar_() {
+    var equipmentName = document.getElementById('f-equipment').value.trim();
+    var wrap = document.getElementById('form-mini-cal-field');
+    if (!equipmentName) {
+      wrap.style.display = 'none';
+      return;
+    }
+    if (wrap.style.display === 'none' || formCalYear === null) {
+      showFormMiniCalendar_(equipmentName, fromDateInputValue(document.getElementById('f-start').value));
+      return;
+    }
+    renderFormMiniCalendarMonth_(equipmentName);
+  }
+
+  function renderFormMiniCalendarMonth_(equipmentName) {
+    var labelEl = document.getElementById('form-mc-label');
+    var gridEl = document.getElementById('form-mc-grid');
+    var prevBtn = document.getElementById('form-mc-prev');
+    var hintEl = document.getElementById('form-mc-hint');
+
+    labelEl.textContent = formCalYear + '年' + (formCalMonth + 1) + '月';
+    var now = new Date();
+    prevBtn.disabled = (formCalYear === now.getFullYear() && formCalMonth === now.getMonth());
+
+    // その機材の既存予約（今まさに編集中の予約自体は除く。そうしないと
+    // 「自分自身と重なっている」ように表示されてしまうため）。
+    var itemBookings = bookings.filter(function (b) {
+      return b.equipment === equipmentName && b.row !== editingRow;
+    });
+
+    var startVal = fromDateInputValue(document.getElementById('f-start').value);
+    var endVal = fromDateInputValue(document.getElementById('f-end').value);
+
+    var todayStrVal = todayStr();
+    var firstOfMonth = new Date(formCalYear, formCalMonth, 1);
+    var startWeekday = firstOfMonth.getDay();
+    var daysInMonth = new Date(formCalYear, formCalMonth + 1, 0).getDate();
+
+    gridEl.innerHTML = '';
+    ['日', '月', '火', '水', '木', '金', '土'].forEach(function (w) {
+      var el = document.createElement('div');
+      el.className = 'mc-weekday';
+      el.textContent = w;
+      gridEl.appendChild(el);
+    });
+    for (var i = 0; i < startWeekday; i++) {
+      var pad = document.createElement('div');
+      pad.className = 'mc-cell mc-other';
+      gridEl.appendChild(pad);
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+      var dStr = formatDateStr(new Date(formCalYear, formCalMonth, day));
+      var booked = itemBookings.some(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
+      var inSelectedRange = !!(startVal && endVal && startVal <= dStr && dStr <= endVal);
+      var isEndpoint = (dStr === startVal || dStr === endVal);
+      var cls = 'mc-cell';
+      if (isEndpoint) cls += ' mc-select-endpoint';
+      else if (inSelectedRange) cls += ' mc-select-range';
+      else if (booked) cls += ' mc-booked';
+      if (dStr === todayStrVal) cls += ' mc-today';
+      var cell = document.createElement('div');
+      cell.className = cls;
+      cell.textContent = String(day);
+      (function (clickedDate) {
+        cell.addEventListener('click', function (e) {
+          e.stopPropagation();
+          handleFormMiniCalTap_(clickedDate);
+        });
+      })(dStr);
+      gridEl.appendChild(cell);
+    }
+
+    if (formCalRangeStart) {
+      hintEl.textContent = '終了日をタップしてください（開始日: ' + formCalRangeStart + '〜）。同じ日でも構いません。';
+    } else if (startVal && endVal) {
+      hintEl.textContent = '選択中：' + startVal + '〜' + endVal + '（別の日をタップすると選び直せます）';
+    } else {
+      hintEl.textContent = '開始日をタップしてください。';
+    }
+  }
+
+  /**
+   * ミニカレンダーの日付タップの本体。1回目のタップで開始日、2回目のタップで
+   * 終了日を確定する（開始日より前の日をタップした場合は、そこから選び直しにする）。
+   * 確定した内容はそのままf-start/f-endに反映するので、テキスト側の表示も
+   * 連動して変わる。
+   */
+  function handleFormMiniCalTap_(dateStr) {
+    if (!formCalRangeStart || dateStr < formCalRangeStart) {
+      formCalRangeStart = dateStr;
+      document.getElementById('f-start').value = toDateInputValue(dateStr);
+      document.getElementById('f-end').value = toDateInputValue(dateStr);
+    } else {
+      document.getElementById('f-end').value = toDateInputValue(dateStr);
+      formCalRangeStart = null;
+    }
+    var equipmentName = document.getElementById('f-equipment').value.trim();
+    renderFormMiniCalendarMonth_(equipmentName);
+  }
+
   // ---------- 追加・編集フォーム ----------
   function openAddForm() {
     editingRow = null;
@@ -1755,6 +1914,7 @@
     selectedEquipmentRows = [];
     renderSelectedEquipmentList();
     document.getElementById('form-delete').style.display = 'none';
+    showFormMiniCalendar_('', ''); // 機材未選択の状態なので、ミニカレンダーは隠す
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -1774,6 +1934,7 @@
     document.getElementById('f-end').value = toDateInputValue(dateStr);
     selectedEquipmentRows = [{ equipment: equipmentName, quantity: '', supplier: '', startDate: dateStr, endDate: dateStr, note: '' }];
     renderSelectedEquipmentList();
+    showFormMiniCalendar_(equipmentName, dateStr);
   }
 
   function openEditForm(b) {
@@ -1796,6 +1957,7 @@
     // 編集（単一）フォームはselectedEquipmentRowsを使わないため、複数選択フォーム側の
     // 「未追加なら保存不可」状態が残ったままにならないよう、必ず押せる状態に戻す。
     updateFormSaveButtonState();
+    showFormMiniCalendar_(b.equipment || '', b.startDate || '');
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -1832,6 +1994,7 @@
     renderSelectedEquipmentList();
     // 次の機材を選びやすいよう、機材名の選択だけ空欄に戻す（カテゴリ絞り込みは維持）。
     populateEquipmentSelect(document.getElementById('f-category').value, '');
+    showFormMiniCalendar_('', ''); // 機材名が空欄に戻ったので、ミニカレンダーも一旦隠す
   }
 
   function buildSupplierSelectElement(idx, selectedValue) {
@@ -2659,8 +2822,39 @@
   document.getElementById('equipment-detail-back').addEventListener('click', closeEquipmentCategoryDetail);
   document.getElementById('f-category').addEventListener('change', function () {
     populateEquipmentSelect(this.value, '');
+    showFormMiniCalendar_('', ''); // カテゴリを変えると機材名の選択が空欄に戻るため、カレンダーも一旦隠す
+  });
+  // 【2026/8/29追加】機材名を選ぶ・変えるたびに、その機材の予約状況ミニカレンダーを
+  // 表示・更新する。
+  document.getElementById('f-equipment').addEventListener('change', function () {
+    var val = this.value.trim();
+    if (!val) { showFormMiniCalendar_('', ''); return; }
+    showFormMiniCalendar_(val, fromDateInputValue(document.getElementById('f-start').value));
+  });
+  document.getElementById('form-mc-prev').addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (this.disabled) return;
+    formCalMonth--; if (formCalMonth < 0) { formCalMonth = 11; formCalYear--; }
+    renderFormMiniCalendarMonth_(document.getElementById('f-equipment').value.trim());
+  });
+  document.getElementById('form-mc-next').addEventListener('click', function (e) {
+    e.stopPropagation();
+    formCalMonth++; if (formCalMonth > 11) { formCalMonth = 0; formCalYear++; }
+    renderFormMiniCalendarMonth_(document.getElementById('f-equipment').value.trim());
   });
   document.getElementById('f-start').addEventListener('change', syncEndMonthToStart_);
+  // 【2026/8/29追加】開始日・終了日をテキスト/カレンダーピッカーで直接書き換えた
+  // ときも、ミニカレンダー側の色分け表示（選択中の期間）とタップ待ち状態をすぐに
+  // 合わせる。syncEndMonthToStart_の後に登録しているので、終了日の自動調整が
+  // 終わった後の最新の値を見て描き直す。
+  document.getElementById('f-start').addEventListener('change', function () {
+    formCalRangeStart = null;
+    refreshFormMiniCalendar_();
+  });
+  document.getElementById('f-end').addEventListener('change', function () {
+    formCalRangeStart = null;
+    refreshFormMiniCalendar_();
+  });
   document.getElementById('f-project').addEventListener('change', function () {
     updateProjectCustomInputVisibility();
     if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
