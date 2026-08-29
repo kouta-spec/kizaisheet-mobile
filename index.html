@@ -271,6 +271,12 @@
      別の色（青系）にして、見分けやすくしている。 */
   .mc-cell.mc-select-endpoint { background: var(--blue); color: white; font-weight: 800; box-shadow: 0 0 0 2px var(--blue-dark) inset; }
   .mc-cell.mc-select-range { background: var(--tint2); color: var(--blue-dark); font-weight: 700; }
+  /* 【2026/8/29追加】機材重複修正のために編集フォームを開いたとき、直そうとしている
+     重複日（.mc-overlapの縞模様）が「選択中の期間」の青い塗りつぶしで隠れてしまわない
+     ようにするための、輪郭線だけの重ね表示。背景はmc-overlap側（縞模様）をそのまま
+     活かし、選択中であることは枠線（outline）で示す。mc-todayは既にbox-shadowで
+     リングを表現しているため、それと衝突しないようoutlineを使う。 */
+  .mc-cell.mc-selected-ring { outline: 3px solid var(--blue-dark); outline-offset: -3px; }
 
   /* 【2026/8/28修正】以前はこのカード左端の色にvar(--red)/var(--orange)/var(--green)
      （明るめの汎用カラー）を使っていたが、同じ「使用中／予約あり／空き」を表す
@@ -685,7 +691,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-29b';
+  var APP_BUILD_VERSION = '2026-08-29c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1839,11 +1845,17 @@
     var now = new Date();
     prevBtn.disabled = (formCalYear === now.getFullYear() && formCalMonth === now.getMonth());
 
-    // その機材の既存予約（今まさに編集中の予約自体は除く。そうしないと
-    // 「自分自身と重なっている」ように表示されてしまうため）。
-    var itemBookings = bookings.filter(function (b) {
-      return b.equipment === equipmentName && b.row !== editingRow;
-    });
+    // 【2026/8/29追加】重複を直すために開いた編集画面では、「どの日が重複しているか」が
+    // このミニカレンダーでもひと目で分かるようにしたい、との要望に対応。
+    // ・重複（.mc-overlap、縞模様）の判定は、今まさに編集中の予約も含めた「その機材の
+    //   全予約」から計算する（機材の状況タブと同じcomputeOverlapDateSet_を使う）。
+    //   編集中の予約を除いてしまうと、直そうとしている重複そのものが「重複ではない」
+    //   ように見えてしまうため、あえて含めている。
+    // ・一方、単なる「予約あり（赤一色）」表示は、今まで通り編集中の予約自体を除いた
+    //   「他の予約」だけを対象にする（自分自身とだけ重なっているように見えるのを防ぐ）。
+    var allItemBookings = bookings.filter(function (b) { return b.equipment === equipmentName; });
+    var overlapDateSet = computeOverlapDateSet_(allItemBookings);
+    var itemBookings = allItemBookings.filter(function (b) { return b.row !== editingRow; });
 
     var startVal = fromDateInputValue(document.getElementById('f-start').value);
     var endVal = fromDateInputValue(document.getElementById('f-end').value);
@@ -1868,12 +1880,25 @@
     for (var day = 1; day <= daysInMonth; day++) {
       var dStr = formatDateStr(new Date(formCalYear, formCalMonth, day));
       var booked = itemBookings.some(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
+      var isOverlapDay = !!overlapDateSet[dStr];
       var inSelectedRange = !!(startVal && endVal && startVal <= dStr && dStr <= endVal);
       var isEndpoint = (dStr === startVal || dStr === endVal);
+      // 【2026/8/29修正】重複日(isOverlapDay)は、選択中の期間と重なっていても
+      // 縞模様の背景が必ず見えるようにする。選択中であることは背景の上書きではなく
+      // mc-selected-ring（枠線）で示す。こうしないと、重複を直そうとして開いた
+      // 編集フォームでは自分の予約日＝選択中の期間になるため、肝心の重複表示が
+      // 選択色（青）に隠れてしまい、何が重複しているのか分からなくなってしまう。
       var cls = 'mc-cell';
-      if (isEndpoint) cls += ' mc-select-endpoint';
-      else if (inSelectedRange) cls += ' mc-select-range';
-      else if (booked) cls += ' mc-booked';
+      if (isOverlapDay) {
+        cls += ' mc-overlap';
+        if (isEndpoint || inSelectedRange) cls += ' mc-selected-ring';
+      } else if (isEndpoint) {
+        cls += ' mc-select-endpoint';
+      } else if (inSelectedRange) {
+        cls += ' mc-select-range';
+      } else if (booked) {
+        cls += ' mc-booked';
+      }
       if (dStr === todayStrVal) cls += ' mc-today';
       var cell = document.createElement('div');
       cell.className = cls;
