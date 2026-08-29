@@ -233,6 +233,24 @@
   .mc-label { flex: 1; text-align: center; font-size: 12px; font-weight: 800; color: var(--sub); }
   .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
   .mc-weekday { text-align: center; font-size: 9px; color: var(--sub); font-weight: 700; padding-bottom: 2px; }
+  /* 【2026/8/29追加】予約フォーム内のミニカレンダー専用の調整。
+     ①表示が大きすぎるという指摘 → 幅に上限をつけて中央寄せし、フォーム全体の
+       中でコンパクトに収まるようにした（機材の状況タブ側の見た目は変えていない）。
+     ②月を変える矢印が小さくて押し間違えるという指摘 → ボタンをひとまわり大きくした。 */
+  #form-mini-cal { max-width: 280px; margin-left: auto; margin-right: auto; }
+  #form-mini-cal .mini-cal-nav button {
+    width: 38px; height: 38px; font-size: 18px; border-radius: 10px;
+  }
+  /* ③タップした後どうすればいいか分かりにくいという指摘 → 小さいグレー文字の
+     ヒントではなく、状態ごとに色を変えた目立つ帯で表示する（開始日待ち＝青、
+     終了日待ち＝オレンジ、選択完了＝緑）。色は他の画面の凡例・バッジと揃えている。 */
+  .form-mc-hint-box {
+    margin-top: 8px; padding: 9px 12px; border-radius: 10px;
+    font-size: 13px; font-weight: 700; line-height: 1.5; text-align: center;
+  }
+  .form-mc-hint-box.state-start { background: #e8ecfe; color: var(--blue-dark); }
+  .form-mc-hint-box.state-end { background: #fff2da; color: #a35a00; }
+  .form-mc-hint-box.state-done { background: #dcf7ec; color: #0b8f61; }
   .mc-cell {
     aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
     border-radius: 7px; font-size: 10px; background: var(--tint); color: var(--text); cursor: pointer;
@@ -556,7 +574,7 @@
         </div>
         <div class="mini-cal-grid" id="form-mc-grid"></div>
       </div>
-      <div class="hint" id="form-mc-hint" style="margin-top:6px;">開始日をタップしてください。</div>
+      <div class="form-mc-hint-box state-start" id="form-mc-hint">👆 開始日をタップしてください</div>
     </div>
     <!-- 編集時（既存の1件のみ）はここで数量・発注先を直接入力 -->
     <div id="single-equipment-fields" class="field-row">
@@ -667,7 +685,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-29a';
+  var APP_BUILD_VERSION = '2026-08-29b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1869,12 +1887,17 @@
       gridEl.appendChild(cell);
     }
 
+    // 【2026/8/29追加】次に何をすればいいか一目で分かるよう、状態ごとに色と
+    // 絵文字を変える（開始日待ち＝青、終了日待ち＝オレンジ、選択完了＝緑）。
     if (formCalRangeStart) {
-      hintEl.textContent = '終了日をタップしてください（開始日: ' + formCalRangeStart + '〜）。同じ日でも構いません。';
+      hintEl.className = 'form-mc-hint-box state-end';
+      hintEl.textContent = '👉 次は終了日をタップしてください（開始日: ' + formCalRangeStart + '〜。同じ日でもOK）';
     } else if (startVal && endVal) {
-      hintEl.textContent = '選択中：' + startVal + '〜' + endVal + '（別の日をタップすると選び直せます）';
+      hintEl.className = 'form-mc-hint-box state-done';
+      hintEl.textContent = '✅ 選択中：' + startVal + '〜' + endVal + '（別の日をタップすると選び直せます）';
     } else {
-      hintEl.textContent = '開始日をタップしてください。';
+      hintEl.className = 'form-mc-hint-box state-start';
+      hintEl.textContent = '👆 開始日をタップしてください';
     }
   }
 
