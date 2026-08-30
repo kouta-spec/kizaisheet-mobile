@@ -175,9 +175,18 @@
   .gantt-actions button:active { transform: scale(0.96); }
   #gantt-refresh-btn { background: #ffe9f1; color: #c23367; }
   .gantt-actions button:disabled { opacity: 0.5; }
+  /* 【2026/8/30修正】以前は通常の行として#listの上に表示していたため、機材カレンダーの
+     詳細シートなど全画面のオーバーレイ（.overlay、z-index:30）を開いた状態で保存すると、
+     このバナーがその裏に隠れて見えなくなり、「重複が直っていなくても警告が消えた＝直った」
+     ように見えてしまっていた。position: fixedにしてオーバーレイより手前（z-index）に
+     浮かせることで、どの画面を開いていても警告が確実に見えるようにする。 */
   #status-banner {
-    display: none; margin: 0 14px 10px; padding: 10px 12px; border-radius: 12px;
+    display: none; position: fixed; left: 14px; right: 14px;
+    top: calc(env(safe-area-inset-top) + 14px); z-index: 40;
+    max-width: 640px; margin: 0 auto; padding: 12px 14px; border-radius: 14px;
     font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+    max-height: 70vh; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(20,22,46,0.25);
   }
   #status-banner.show { display: block; animation: fadeInUp 0.2s ease-out backwards; }
   #status-banner.info { background: #e8ecfe; color: var(--blue-dark); }
@@ -434,6 +443,12 @@
      収まりきらず右側の項目（終了日）が画面の外にはみ出すことがあった。
      min-width: 0を指定して、flexの幅に合わせてきちんと縮められるようにする。 */
   .field-row .field { flex: 1; min-width: 0; }
+  /* 【2026/8/30追加】重複修正の編集フォーム（開始日・終了日が横並び）で、実機の
+     iPhone（Safari）だと<input type="date">の日付表示とカレンダーアイコンが
+     重なって見えるとの報告があった。Safariのtype="date"は内部の年/月/日と
+     アイコンを画面幅に応じて縮めてくれないため、左右のpaddingとフォントサイズを
+     少し小さくして、実際に表示に使える横幅を広げることで重なりを防ぐ。 */
+  .field input[type="date"] { padding: 10px 6px; font-size: 14px; }
   .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
   .btn {
     flex: 1; padding: 13px; border-radius: 999px; border: none; font-size: 15px; font-weight: 700;
@@ -738,7 +753,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-29j';
+  var APP_BUILD_VERSION = '2026-08-30a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1501,6 +1516,21 @@
     return { y: y, m: m - 1, d: d };
   }
 
+  // 【2026/8/29追加】同じ機材名の2つの期間（"YYYY/M/D"文字列）が重なっているかどうかを
+  // 判定する。addSelectedEquipment()で「同じ機材をリストに追加しようとしたとき、本当に
+  // 期間が重なっている場合だけブロックする」ために使う。日付が解釈できない場合は
+  // 判定できないため、安全側（重なっている扱い＝true）にしておく。
+  function dateRangesOverlap_(startA, endA, startB, endB) {
+    var a1 = parseSlashDateParts_(startA), a2 = parseSlashDateParts_(endA);
+    var b1 = parseSlashDateParts_(startB), b2 = parseSlashDateParts_(endB);
+    if (!a1 || !a2 || !b1 || !b2) return true;
+    var startDateA = new Date(a1.y, a1.m, a1.d);
+    var endDateA = new Date(a2.y, a2.m, a2.d);
+    var startDateB = new Date(b1.y, b1.m, b1.d);
+    var endDateB = new Date(b2.y, b2.m, b2.d);
+    return startDateA <= endDateB && startDateB <= endDateA;
+  }
+
   function attachInlineCalendar(card, entry, name, reopenDetail) {
     var itemBookings = entry.current.concat(entry.upcoming);
     var overlapDateSet = computeOverlapDateSet_(itemBookings);
@@ -2196,14 +2226,21 @@
       showEquipmentAddError(isCustomMode ? '機材名を入力してください' : '機材名を選択してください');
       return;
     }
-    var already = selectedEquipmentRows.some(function (row) { return row.equipment === equipment; });
-    if (already) {
-      showEquipmentAddError('「' + equipment + '」は既にリストに追加されています。');
+    var defaultStart = fromDateInputValue(document.getElementById('f-start').value);
+    var defaultEnd = fromDateInputValue(document.getElementById('f-end').value);
+    // 【2026/8/29変更】以前は同じ機材名が1件でもリストにあれば、期間に関係なく無条件で
+    // ブロックしていた。機材使用状況のカレンダーから日付をタップして開いた場合など、
+    // 同じ機材を「期間が重ならない別日程」でもう1件追加したいケースまで塞いでしまって
+    // いたため、実際に期間が重なっている場合だけブロックするようにした。
+    var conflictRow = selectedEquipmentRows.find(function (row) {
+      if (row.equipment !== equipment) return false;
+      return dateRangesOverlap_(row.startDate, row.endDate, defaultStart, defaultEnd);
+    });
+    if (conflictRow) {
+      showEquipmentAddError('「' + equipment + '」はすでに同じ期間でリストに追加されています。');
       return;
     }
     hideEquipmentAddError();
-    var defaultStart = fromDateInputValue(document.getElementById('f-start').value);
-    var defaultEnd = fromDateInputValue(document.getElementById('f-end').value);
     var defaultNote = document.getElementById('f-note').value.trim();
     selectedEquipmentRows.push({
       equipment: equipment,
