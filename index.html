@@ -771,7 +771,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-01d';
+  var APP_BUILD_VERSION = '2026-09-01e';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2153,7 +2153,14 @@
     }
     for (var day = 1; day <= daysInMonth; day++) {
       var dStr = formatDateStr(new Date(formCalYear, formCalMonth, day));
-      var booked = itemBookings.some(function (b) { return b.startDate <= dStr && dStr <= b.endDate; });
+      // 【2026/9/2修正】以前はここで発注先ありの予約も含めて「予約あり（赤）」判定
+      // していたため、レンタル会社に発注した予約の期間が、名前の一致する自社機材の
+      // 「すでに使用中」の日として表示されてしまっていた（すぐ上のisOverlapDay判定
+      // ＝computeOverlapDateSet_はすでに発注先ありを対象外にしているのに、こちらの
+      // 単純な「予約あり」判定だけ対象外にできておらず、同じカレンダーの中で
+      // 基準がずれてしまっていた）。「機材使用状況」タブのカレンダーと同じく、
+      // 発注先ありの予約はその機材自身の稼働状況として扱わない、という考え方に揃える。
+      var booked = itemBookings.some(function (b) { return !b.supplier && b.startDate <= dStr && dStr <= b.endDate; });
       var isOverlapDay = !!overlapDateSet[dStr];
       var inSelectedRange = !!(startVal && endVal && startVal <= dStr && dStr <= endVal);
       var isEndpoint = (dStr === startVal || dStr === endVal);
