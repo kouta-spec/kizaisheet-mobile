@@ -771,7 +771,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-01b';
+  var APP_BUILD_VERSION = '2026-09-01c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -960,8 +960,22 @@
     switchView('equipment');
     var built = buildEquipmentStatusMap();
     var cat = findCategoryForEquipment(name);
-    var namesInCat = (cat && equipmentByCategory[cat]) ? equipmentByCategory[cat] : built.allNames;
-    openEquipmentCategoryDetail(cat || '全機材', namesInCat, built.byEquipment);
+    var namesInCat, categoryTitle;
+    if (cat && equipmentByCategory[cat]) {
+      namesInCat = equipmentByCategory[cat];
+      categoryTitle = cat;
+    } else {
+      // 【2026/9/2修正】マスターガントチャートに無い自由入力の機材名（レンタル品の
+      // 名前を書きかえた場合など）は、以前はどのカテゴリにも属さないため「全機材」
+      // （アプリに出てくる機材すべて）を丸ごと表示してしまい、目的の機材が大量の
+      // 項目に埋もれて見つけにくい・不具合のように見える問題があった。機材使用状況
+      // タブの「自由入力の機材（一覧未登録）」グループと同じ絞り込みを使い、その
+      // 機材を含む小さなグループだけを表示するようにする。
+      var freeNames = computeFreeEquipmentNames_(built.allNames);
+      namesInCat = freeNames.indexOf(name) !== -1 ? freeNames : [name];
+      categoryTitle = FREE_EQUIPMENT_GROUP_NAME;
+    }
+    openEquipmentCategoryDetail(categoryTitle, namesInCat, built.byEquipment);
     setTimeout(function () {
       var jumpEl = document.getElementById('equipment-detail-jump');
       var targetChip = null;
