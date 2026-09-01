@@ -771,7 +771,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-01c';
+  var APP_BUILD_VERSION = '2026-09-01d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1370,6 +1370,14 @@
 
     bookings.forEach(function (b) {
       if (!b.equipment || !b.startDate || !b.endDate) return;
+      // 【2026/9/2追加】発注先（外部レンタル会社）が入っている予約は、物理的には
+      // マスターガントチャートの自社機材とは別物（レンタル品）なので、この機材
+      // カレンダーには反映しない。以前は機材名がマスター機材と完全に一致すると、
+      // レンタル品の予約がその自社機材自身の稼働状況として表示されてしまい、
+      // 実際には空いている自社機材が「使用中」に見えてしまう不具合があった
+      // （getEquipmentOverlapSummaryが発注先ありの行を重複チェック対象外にしている
+      // のと同じ考え方：発注先ありの行は「その物理的な1台」の予約ではない）。
+      if (b.supplier && b.supplier !== '') return;
       ensure(b.equipment);
       var entry = byEquipment[b.equipment];
       if (b.startDate <= today && today <= b.endDate) {
