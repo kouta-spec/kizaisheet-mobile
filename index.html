@@ -443,12 +443,14 @@
      収まりきらず右側の項目（終了日）が画面の外にはみ出すことがあった。
      min-width: 0を指定して、flexの幅に合わせてきちんと縮められるようにする。 */
   .field-row .field { flex: 1; min-width: 0; }
-  /* 【2026/8/30追加】重複修正の編集フォーム（開始日・終了日が横並び）で、実機の
-     iPhone（Safari）だと<input type="date">の日付表示とカレンダーアイコンが
-     重なって見えるとの報告があった。Safariのtype="date"は内部の年/月/日と
-     アイコンを画面幅に応じて縮めてくれないため、左右のpaddingとフォントサイズを
-     少し小さくして、実際に表示に使える横幅を広げることで重なりを防ぐ。 */
-  .field input[type="date"] { padding: 10px 6px; font-size: 14px; }
+  /* 【2026/8/30修正】開始日・終了日を横並びにしていたが、実機のiPhone（Safari）だと
+     <input type="date">が画面幅に応じて縮んでくれず、paddingやフォントサイズを
+     小さくしても、枠と枠の間の隙間が無くなったり右側の余白が消えたりして、他の
+     項目（数量・発注先や備考など）と幅がずれて見える問題が解決しなかった。
+     横に並べること自体をやめ、備考などと同じ「1項目1行」の縦並びに変更し、
+     日付欄には常にフルの横幅を使えるようにする。 */
+  .date-field-row { flex-direction: column; gap: 0; }
+  .date-field-row .field { flex: none; min-width: 0; }
   .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
   .btn {
     flex: 1; padding: 13px; border-radius: 999px; border: none; font-size: 15px; font-weight: 700;
@@ -489,6 +491,10 @@
   .selected-eq-row:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(67,97,238,0.14); }
   .selected-eq-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
   .selected-eq-name { font-size: 14px; font-weight: 700; color: var(--text); }
+  /* 【2026/9/1追加】機材名の入力欄がプルダウンで選んだ後も書きかえ可能であることに
+     気づきにくいとの声があったため、欄の上に「タップして書きかえられます」という
+     案内ラベルを常に出すようにした。 */
+  .selected-eq-name-label { font-size: 11px; color: var(--sub); font-weight: 600; margin-bottom: 4px; }
   /* 【2026/8/29追加】追加済みリスト内で機材名をその場で編集できるようにした入力欄。
      見た目は元のspan表示に近づけつつ、編集可能であることが分かるよう枠線を付けている。 */
   .selected-eq-name-input {
@@ -655,7 +661,7 @@
         <select id="f-supplier"><option value="">（自社在庫・セット機材）</option></select>
       </div>
     </div>
-    <div class="field-row">
+    <div class="field-row date-field-row">
       <div class="field">
         <label>開始日</label>
         <input type="date" id="f-start">
@@ -753,7 +759,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-08-30a';
+  var APP_BUILD_VERSION = '2026-09-01a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -794,6 +800,10 @@
     return allNames.filter(function (n) { return !categorized[n]; });
   }
   var editingRow = null; // nullなら新規追加、数値なら編集中の行番号
+  // 【2026/8/30追加】編集フォームを開いた時点（修正する前）の内容を控えておく。
+  // 保存に成功した直後に「一つ前に戻す」を押すと、この内容でもう一度更新をかけて
+  // 元通りに戻せる（間違えて機材修正をしてしまったときのやり直し用）。
+  var editOriginalSnapshot = null;
   var selectedEquipmentRows = []; // 新規追加フォームで「リストに追加」済みの機材（{equipment, quantity, supplier}の配列）
   var currentView = 'bookings'; // 'bookings' または 'equipment'
 
@@ -2191,6 +2201,17 @@
 
   function openEditForm(b) {
     editingRow = b.row;
+    // 【2026/8/30追加】修正する前の内容をここで控えておく（「一つ前に戻す」用）。
+    editOriginalSnapshot = {
+      row: b.row,
+      project: b.project || '',
+      equipment: b.equipment || '',
+      quantity: b.quantity || '',
+      supplier: b.supplier || '',
+      startDate: b.startDate || '',
+      endDate: b.endDate || '',
+      note: b.note || ''
+    };
     document.getElementById('form-title').textContent = '予約を編集（' + b.row + '行目）';
     // 編集は既存の1件のみを扱うため、機材は単一選択（数量・発注先を直接入力）に戻す。
     document.getElementById('single-equipment-fields').style.display = 'flex';
@@ -2307,6 +2328,13 @@
       var box = document.createElement('div');
       box.className = 'selected-eq-row';
 
+      // 【2026/9/1追加】プルダウンから選んだ機材名も、この下の入力欄でそのまま
+      // 書きかえられることに気づきにくいという声があったため、ラベルで明示する。
+      var nameLabel = document.createElement('div');
+      nameLabel.className = 'selected-eq-name-label';
+      nameLabel.textContent = '機材名（タップして書きかえられます）';
+      box.appendChild(nameLabel);
+
       var head = document.createElement('div');
       head.className = 'selected-eq-head';
       // 【2026/8/29追加】追加済みリストの中でも機材名をその場で編集できるようにした。
@@ -2364,8 +2392,11 @@
       box.appendChild(row2);
 
       // 期間（機材ごとに個別編集できる。追加した直後はフォーム上部の値がコピーされている）
+      // 【2026/8/30変更】開始日・終了日を横並びにすると、実機のiPhone（Safari）で
+      // <input type="date">の枠同士が詰まって見える問題があったため、こちらも
+      // 縦並び（date-field-row）に変更する。
       var dateRow = document.createElement('div');
-      dateRow.className = 'field-row';
+      dateRow.className = 'field-row date-field-row';
 
       var startField = document.createElement('div');
       startField.className = 'field';
@@ -2535,6 +2566,10 @@
 
     if (!equipment) { showFormError('機材名を選択、または入力してください'); return; }
 
+    // 【2026/8/30追加】保存後に「修正前に戻す」を出せるよう、更新前の内容の
+    // スナップショット（openEditForm時に控えたもの）をここで確定させておく。
+    var snapshotForUndo = editOriginalSnapshot;
+
     var body = {
       action: 'updateBooking',
       row: editingRow,
@@ -2564,13 +2599,26 @@
         hideLoading();
         closeForm();
         setOverlapStateFromAuthoritative_(res);
+        // 【2026/8/30追加】更新前の内容（同じ行番号に書き戻すだけのupdateBooking）を
+        // 「修正前に戻す」ボタンの復元データとして渡す。誤って他の作品・機材の
+        // 内容で上書きしてしまった場合でも、その場ですぐ気づいて戻せるようにする。
+        var restoreBody = snapshotForUndo ? {
+          action: 'updateBooking',
+          row: snapshotForUndo.row,
+          project: snapshotForUndo.project,
+          equipment: snapshotForUndo.equipment,
+          quantity: snapshotForUndo.quantity ? Number(snapshotForUndo.quantity) : undefined,
+          supplier: snapshotForUndo.supplier,
+          startDate: snapshotForUndo.startDate,
+          endDate: snapshotForUndo.endDate,
+          note: snapshotForUndo.note
+        } : null;
         if (res.overlap) {
-          showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
+          showUndoEditBanner_(restoreBody, (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
         } else if (res.warning) {
-          showBanner(res.warning, 'warn');
+          showUndoEditBanner_(restoreBody, res.warning, 'warn');
         } else {
-          showBanner(res.message || '保存しました。', 'info');
-          scheduleBannerAutoHide_(4000);
+          showUndoEditBanner_(restoreBody, res.message || '保存しました。', 'info');
         }
       });
     }).catch(function (err) {
@@ -2797,6 +2845,99 @@
         showBanner('通信エラー: ' + err.message, 'error');
       });
     });
+  }
+
+  // 【2026/8/30追加】編集を保存した直後に表示する「修正前に戻す」ボタン。上の
+  // showUndoDeleteBanner_（削除の「元に戻す」）と同じ考え方で、間違えて他の作品や
+  // 機材の内容で上書き保存してしまったときに、その場ですぐ気づいて元通りに戻せる
+  // ようにするための簡易的なやり直し機能。修正前の内容（openEditFormを開いた時点の
+  // スナップショット）を、同じ行番号にもう一度updateBookingで書き戻すだけで実現する。
+  // 時間が経ってから気づいた場合はこのボタンではもう戻せないため、その場合は
+  // スプレッドシートの「ファイル→版履歴」から確認してもらう必要がある。
+  var UNDO_EDIT_SECONDS = 12;
+  function showUndoEditBanner_(restoreBody, baseMessage, type, jumpNames) {
+    var el = document.getElementById('status-banner');
+    el.innerHTML = '';
+
+    var textEl = document.createElement('div');
+    textEl.textContent = baseMessage;
+    el.appendChild(textEl);
+
+    // showBanner()と同じ「◯◯のカレンダーを見る」ジャンプボタン（重複時のみ）。
+    if (jumpNames && jumpNames.length) {
+      var jumpRow = document.createElement('div');
+      jumpRow.className = 'banner-jump-row';
+      jumpNames.forEach(function (name) {
+        var jumpBtn = document.createElement('button');
+        jumpBtn.type = 'button';
+        jumpBtn.className = 'banner-jump-btn';
+        jumpBtn.textContent = '📅 ' + name + 'のカレンダーを見る';
+        jumpBtn.addEventListener('click', function () {
+          hideBanner();
+          jumpToEquipmentCalendar(name);
+        });
+        jumpRow.appendChild(jumpBtn);
+      });
+      el.appendChild(jumpRow);
+    }
+
+    // 復元データ（restoreBody）が取得できていた場合のみ「修正前に戻す」ボタンを出す
+    // （万一スナップショットが無かった場合は、通常のバナー表示にとどめる）。
+    if (restoreBody) {
+      var undoRow = document.createElement('div');
+      undoRow.className = 'banner-jump-row';
+      var undoBtn = document.createElement('button');
+      undoBtn.type = 'button';
+      undoBtn.className = 'banner-jump-btn';
+      undoRow.appendChild(undoBtn);
+      el.appendChild(undoRow);
+
+      var remaining = UNDO_EDIT_SECONDS;
+      function updateLabel() { undoBtn.textContent = '↩️ 修正前に戻す（残り' + remaining + '秒）'; }
+      updateLabel();
+      var countdownTimer = setInterval(function () {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(countdownTimer);
+          // 他の操作で既に別のバナー内容に変わっている場合は触らない。期限が
+          // 切れたら「修正前に戻す」の表示は消すが、まだ重複が残っている機材が
+          // あれば、その警告だけは消さずに表示し続ける。
+          if (document.getElementById('status-banner').contains(undoBtn)) renderPersistentOverlapBanner_();
+          return;
+        }
+        updateLabel();
+      }, 1000);
+
+      undoBtn.addEventListener('click', function () {
+        clearInterval(countdownTimer);
+        undoBtn.disabled = true;
+        undoBtn.textContent = '復元中...';
+        apiPost(restoreBody).then(function (res) {
+          if (!res.ok) {
+            showBanner('修正前の内容への復元に失敗しました: ' + (res.error || '') + '\n\n内容を確認のうえ、手動で直してください。', 'error');
+            return;
+          }
+          refreshBookings(true);
+          setOverlapStateFromAuthoritative_(res);
+          if (res.overlap) {
+            showBanner('修正前の内容に戻しました。\n\n' + (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
+          } else {
+            showBanner('修正前の内容に戻しました。', 'info');
+            scheduleBannerAutoHide_(4000);
+          }
+        }).catch(function (err) {
+          showBanner('通信エラー: ' + err.message, 'error');
+        });
+      });
+    }
+
+    el.className = 'show ' + (type || 'info');
+    // 復元データが無いフォールバックの場合だけ、警告・エラーでなければ今まで通り
+    // 自動的にバナーを消す（「修正前に戻す」ボタンがある場合は、12秒のカウント
+    // ダウンが終わるまでバナー自体は消さない）。
+    if (!restoreBody && type !== 'warn' && type !== 'error') {
+      scheduleBannerAutoHide_(4000);
+    }
   }
 
   // ---------- ガントチャート更新 ----------
