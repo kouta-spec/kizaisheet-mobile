@@ -428,6 +428,14 @@
   }
   .field { margin-bottom: 14px; }
   .field label { display: block; font-size: 12px; color: var(--sub); font-weight: 600; margin-bottom: 4px; }
+  /* 【2026/9/1追加】機材名プルダウンの下に出す「選んだ機材名を書きかえる」リンク。
+     普段は目立たせすぎず、押せることだけ分かるようリンク風の見た目にしている。 */
+  .equip-rename-link {
+    display: none; margin-top: 6px; background: none; border: none; padding: 2px 0;
+    font-size: 12.5px; font-weight: 700; color: var(--blue-dark); cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .equip-rename-link:active { opacity: 0.6; }
   .field input, .field select {
     width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
     font-size: 15px; background: white;
@@ -632,6 +640,10 @@
     <div class="field">
       <label>機材名（一覧から選ぶか、「＋新しい機材名を入力」で自由入力）</label>
       <select id="f-equipment"><option value="">（読み込み中...）</option></select>
+      <!-- 【2026/9/1追加】プルダウンで選んだ機材名も、リストに追加する前にその場で
+           書きかえられるように、選んだ内容を引き継いだまま自由入力欄へ切りかえる
+           ボタンを追加した（例：「SONY FX9 No.1」を選んだあと、No.表記だけ消したい場合）。-->
+      <button type="button" id="f-equipment-rename-btn" class="equip-rename-link" style="display:none;">✎ 選んだ機材名を書きかえる</button>
       <input type="text" id="f-equipment-custom" placeholder="新しい機材名を入力" style="display:none; margin-top:6px;">
     </div>
     <!-- 【2026/8/29追加】機材名を選ぶと、その機材の予約状況（空き・使用中）を
@@ -759,7 +771,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-01a';
+  var APP_BUILD_VERSION = '2026-09-01b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1955,6 +1967,39 @@
       customInput.style.display = 'none';
       customInput.value = '';
     }
+    updateEquipmentRenameButtonVisibility_();
+  }
+
+  // 【2026/9/1追加】プルダウンで実在の機材名（空欄でも「＋新しい機材名を入力...」でもない）
+  // が選ばれているときだけ、「✎ 選んだ機材名を書きかえる」ボタンを表示する。
+  function updateEquipmentRenameButtonVisibility_() {
+    var sel = document.getElementById('f-equipment');
+    var btn = document.getElementById('f-equipment-rename-btn');
+    if (!btn) return;
+    var hasRealSelection = sel.value && sel.value !== EQUIPMENT_CUSTOM_VALUE;
+    // 【重要】CSSの.equip-rename-linkクラス自体がdisplay:noneを既定にしているため、
+    // ここでstyle.displayを空文字（''）に戻すだけだとインラインスタイルが消えて
+    // クラス側のdisplay:noneに戻ってしまい、表示されない不具合になる。表示する
+    // 場合は明示的にinline-blockを指定する。
+    btn.style.display = hasRealSelection ? 'inline-block' : 'none';
+  }
+
+  // ボタンを押すと、今プルダウンで選ばれている機材名を引き継いだまま、自由入力欄へ
+  // 切りかえる。「＋新しい機材名を入力...」を選んでゼロから入力し直す必要がなく、
+  // 例えば「SONY FX9 No.1」を選んだあと、No.表記だけを消す、といった書きかえがすぐできる。
+  function switchEquipmentToCustomWithCurrentName_() {
+    var sel = document.getElementById('f-equipment');
+    var currentName = sel.value;
+    if (!currentName || currentName === EQUIPMENT_CUSTOM_VALUE) return;
+    sel.value = EQUIPMENT_CUSTOM_VALUE;
+    updateEquipmentCustomInputVisibility();
+    var customInput = document.getElementById('f-equipment-custom');
+    customInput.value = currentName;
+    customInput.focus();
+    customInput.select();
+    // プルダウンでの選択と同じ機材名を引き継いでいるので、予約状況ミニカレンダーも
+    // 隠さずそのまま表示を続ける（#f-equipmentのchangeハンドラと同じ呼び出し方）。
+    showFormMiniCalendar_(currentName, fromDateInputValue(document.getElementById('f-start').value));
   }
 
   // 機材名は「一覧から選ぶ（#f-equipment）」か「＋新しい機材名を入力を選んで
@@ -3248,6 +3293,9 @@
     if (!val) { showFormMiniCalendar_('', ''); return; }
     showFormMiniCalendar_(val, fromDateInputValue(document.getElementById('f-start').value));
   });
+  // 【2026/9/1追加】「✎ 選んだ機材名を書きかえる」ボタン。プルダウンで選んだ機材名を
+  // 引き継いだまま自由入力欄に切りかえる。
+  document.getElementById('f-equipment-rename-btn').addEventListener('click', switchEquipmentToCustomWithCurrentName_);
   // 【2026/8/29追加】自由入力欄に機材名を打つたびに、ミニカレンダーもすぐ更新する
   // （同名の機材が既にあれば、その場で予約状況が見える）。
   document.getElementById('f-equipment-custom').addEventListener('input', function () {
