@@ -557,6 +557,40 @@
     border-radius: 50%; animation: spin 0.8s linear infinite;
   }
   #loading-overlay .loading-text { font-size: 13px; color: var(--sub); font-weight: 600; }
+
+  /* 【2026/9/2追加】削除確認などに使う、画面中央に出す確認ポップ。以前はブラウザ標準の
+     window.confirm()を使っていたが、スマホのブラウザによっては画面の一番上に小さく
+     出てしまい見づらい・押しにくいという声があったため、アプリ自身の見た目（他の
+     シートと同じ色・角丸）に合わせた、常に画面中央に出るポップアップに置き換える。
+     下からせり上がる.sheetとは違い、その場でふわっと拡大しながら現れる作りにして、
+     「一時的な確認」であることが直感的に伝わるようにしている。 */
+  .confirm-overlay {
+    position: fixed; inset: 0; background: rgba(20,22,46,0.5); z-index: 60;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    opacity: 0; pointer-events: none; transition: opacity 0.18s ease-out;
+  }
+  .confirm-overlay.show { opacity: 1; pointer-events: auto; }
+  .confirm-dialog {
+    width: 100%; max-width: 340px; background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-radius: 20px; padding: 22px 20px 18px; box-shadow: 0 12px 40px rgba(20,22,46,0.35);
+    transform: scale(0.92); transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+    text-align: center;
+  }
+  .confirm-overlay.show .confirm-dialog { transform: scale(1); }
+  .confirm-message {
+    font-size: 14.5px; color: var(--text); line-height: 1.7; white-space: pre-line;
+    margin-bottom: 18px;
+  }
+  .confirm-actions { display: flex; gap: 10px; }
+  .confirm-btn {
+    flex: 1; padding: 12px; border-radius: 999px; border: none; font-size: 14.5px; font-weight: 700;
+    cursor: pointer; transition: transform 0.1s ease-out;
+  }
+  .confirm-btn:active { transform: scale(0.96); }
+  .confirm-btn.confirm-cancel { background: var(--tint); color: var(--text); }
+  .confirm-btn.confirm-ok { background: linear-gradient(135deg, var(--blue-dark), var(--blue)); color: white; }
+  .confirm-btn.confirm-ok.danger { background: linear-gradient(135deg, #c81e42, var(--red)); }
 </style>
 </head>
 <body>
@@ -790,6 +824,16 @@
   <div class="loading-text" id="loading-text">更新中...</div>
 </div>
 
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-dialog" id="confirm-dialog">
+    <div class="confirm-message" id="confirm-message"></div>
+    <div class="confirm-actions">
+      <button type="button" class="confirm-btn confirm-cancel" id="confirm-cancel-btn">キャンセル</button>
+      <button type="button" class="confirm-btn confirm-ok" id="confirm-ok-btn">OK</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -799,7 +843,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-02b';
+  var APP_BUILD_VERSION = '2026-09-02c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1107,6 +1151,42 @@
   }
   function hideLoading() {
     document.getElementById('loading-overlay').classList.remove('show');
+  }
+
+  // 【2026/9/2追加】window.confirm()の代わりに使う、画面中央固定の確認ポップ。
+  // 「はい/いいえ」の代わりにPromiseで結果（true=OK、false=キャンセルまたは
+  // 枠外タップ・裏側タップで閉じた場合）を返すので、呼び出し側は
+  //   showConfirmDialog('本当に削除しますか？').then(function (ok) { if (!ok) return; ... });
+  // のように使う。opts.okLabel/cancelLabelでボタン文言を、opts.dangerで
+  // OKボタンを削除・解除などの「取り消しにくい操作」向けの赤色にできる。
+  function showConfirmDialog(message, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var overlay = document.getElementById('confirm-overlay');
+      var msgEl = document.getElementById('confirm-message');
+      var okBtn = document.getElementById('confirm-ok-btn');
+      var cancelBtn = document.getElementById('confirm-cancel-btn');
+      msgEl.textContent = message;
+      okBtn.textContent = opts.okLabel || 'OK';
+      cancelBtn.textContent = opts.cancelLabel || 'キャンセル';
+      okBtn.className = 'confirm-btn confirm-ok' + (opts.danger ? ' danger' : '');
+
+      function cleanup(result) {
+        overlay.classList.remove('show');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onBackdrop);
+        resolve(result);
+      }
+      function onOk() { cleanup(true); }
+      function onCancel() { cleanup(false); }
+      function onBackdrop(e) { if (e.target === overlay) cleanup(false); }
+
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      overlay.addEventListener('click', onBackdrop);
+      overlay.classList.add('show');
+    });
   }
 
   // ---------- タブ切り替え ----------
@@ -2718,38 +2798,51 @@
         showFormError(res.error || '保存に失敗しました');
         return;
       }
-      // 【2026/8/28修正】以前はここでcloseForm()を先に呼んでいたが、closeForm()は
-      // その場でformReturnAction（重複ピッカーへ「戻る」処理など）を実行してしまう。
-      // formReturnActionは最新のbookingsを見て重複が解消したか判定するため、
-      // まだ古いbookingsのまま実行すると「直したのにまだ重複扱いのピッカーに
-      // 戻ってしまう」不具合になる。そのため、最新データを取得し終えてから
-      // closeForm()（＝画面遷移）を行うようにした。
-      return refreshBookings(true).then(function () {
-        hideLoading();
-        closeForm();
-        setOverlapStateFromAuthoritative_(res);
-        // 【2026/8/30追加】更新前の内容（同じ行番号に書き戻すだけのupdateBooking）を
-        // 「修正前に戻す」ボタンの復元データとして渡す。誤って他の作品・機材の
-        // 内容で上書きしてしまった場合でも、その場ですぐ気づいて戻せるようにする。
-        var restoreBody = snapshotForUndo ? {
-          action: 'updateBooking',
-          row: snapshotForUndo.row,
-          project: snapshotForUndo.project,
-          equipment: snapshotForUndo.equipment,
-          quantity: snapshotForUndo.quantity ? Number(snapshotForUndo.quantity) : undefined,
-          supplier: snapshotForUndo.supplier,
-          startDate: snapshotForUndo.startDate,
-          endDate: snapshotForUndo.endDate,
-          note: snapshotForUndo.note
-        } : null;
-        if (res.overlap) {
-          showUndoEditBanner_(restoreBody, (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
-        } else if (res.warning) {
-          showUndoEditBanner_(restoreBody, res.warning, 'warn');
-        } else {
-          showUndoEditBanner_(restoreBody, res.message || '保存しました。', 'info');
-        }
-      });
+      // 【2026/9/2速度改善】以前はここでrefreshBookings（機材一覧全体の再取得）が
+      // 終わるのを待ってからでないと画面を閉じられず、これが保存の体感速度を
+      // 大きく損なっていた。サーバーに送った内容（body）がそのまま保存された
+      // ことは分かっているので、再取得を待たずに、手元のbookings配列の該当行を
+      // その場で書き換えてから画面を閉じる。実際の再取得は裏側で行う。
+      var target = null;
+      for (var bi = 0; bi < bookings.length; bi++) {
+        if (bookings[bi].row === editingRow) { target = bookings[bi]; break; }
+      }
+      if (target) {
+        target.project = project;
+        target.equipment = equipment;
+        target.quantity = quantity ? Number(quantity) : '';
+        target.supplier = supplier;
+        target.startDate = start;
+        target.endDate = end;
+        target.note = note;
+      }
+      hideLoading();
+      closeForm();
+      setOverlapStateFromAuthoritative_(res);
+      // 【2026/8/30追加】更新前の内容（同じ行番号に書き戻すだけのupdateBooking）を
+      // 「修正前に戻す」ボタンの復元データとして渡す。誤って他の作品・機材の
+      // 内容で上書きしてしまった場合でも、その場ですぐ気づいて戻せるようにする。
+      var restoreBody = snapshotForUndo ? {
+        action: 'updateBooking',
+        row: snapshotForUndo.row,
+        project: snapshotForUndo.project,
+        equipment: snapshotForUndo.equipment,
+        quantity: snapshotForUndo.quantity ? Number(snapshotForUndo.quantity) : undefined,
+        supplier: snapshotForUndo.supplier,
+        startDate: snapshotForUndo.startDate,
+        endDate: snapshotForUndo.endDate,
+        note: snapshotForUndo.note
+      } : null;
+      if (res.overlap) {
+        showUndoEditBanner_(restoreBody, (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
+      } else if (res.warning) {
+        showUndoEditBanner_(restoreBody, res.warning, 'warn');
+      } else {
+        showUndoEditBanner_(restoreBody, res.message || '保存しました。', 'info');
+      }
+      // 他の人が同時に編集している場合などに備え、正式なデータには裏側で揃える
+      // （画面はすでに更新済みなので、この完了を待たせない）。
+      refreshBookings(true);
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
@@ -2812,23 +2905,46 @@
         showFormError(errorMessages.join('\n') || '保存に失敗しました');
         return;
       }
-      // 【2026/8/28修正】上のsubmitSingleEditBookingと同じ理由で、closeForm()
-      // （＝formReturnActionの実行）は最新データの取得後に行うようにした。
-      return refreshBookings(true).then(function () {
-        hideLoading();
-        closeForm();
-        setOverlapStateFromAuthoritative_(res);
-        var messages = [successCount + '/' + total + '件を登録しました。'];
-        if (res.overlap) {
-          messages.push((res.overlapMessage ? res.overlapMessage + '\n' : '') + res.message);
-        } else if (res.warning) {
-          messages.push(res.warning);
-        }
-        errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
-        var hasIssue = (res.overlap || res.warning || errorMessages.length > 0);
-        showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(res.overlapMessage || ''));
-        if (!hasIssue) scheduleBannerAutoHide_(4000);
+      // 【2026/9/2速度改善】以前はここでrefreshBookings（機材一覧全体の再取得）が
+      // 終わるのを待ってから画面を閉じており、これが「登録に約15秒」という体感の
+      // 待ち時間の主な原因になっていた（保存の通信＋再取得の通信、あわせて2回分の
+      // 待ち時間になっていた）。サーバーからの保存結果（res.results、行番号つき）
+      // だけで画面を閉じるのに必要な情報はすべて揃っているため、再取得を待たず、
+      // 保存に成功した内容をその場で手元のbookings配列にそのまま追加してから
+      // 画面を閉じる（サーバーに送ったのと同じ内容なので、再取得結果と食い違う
+      // ことはない）。実際の再取得（他の人の追加分なども拾う）は裏側で行う。
+      results.forEach(function (r, i) {
+        if (!r.ok) return;
+        var src = selectedEquipmentRows[i];
+        bookings.push({
+          row: r.row,
+          project: project,
+          equipment: r.equipment,
+          quantity: (src && src.quantity) ? Number(src.quantity) : '',
+          startDate: src ? src.startDate : '',
+          endDate: src ? src.endDate : '',
+          supplier: (src && src.supplier) ? src.supplier : '',
+          note: (src && src.note) ? src.note : '',
+          returnCheck: '',
+          price: ''
+        });
       });
+      hideLoading();
+      closeForm();
+      setOverlapStateFromAuthoritative_(res);
+      var messages = [successCount + '/' + total + '件を登録しました。'];
+      if (res.overlap) {
+        messages.push((res.overlapMessage ? res.overlapMessage + '\n' : '') + res.message);
+      } else if (res.warning) {
+        messages.push(res.warning);
+      }
+      errorMessages.forEach(function (m) { messages.push('失敗：' + m); });
+      var hasIssue = (res.overlap || res.warning || errorMessages.length > 0);
+      showBanner(messages.join('\n\n'), hasIssue ? 'warn' : 'info', extractOverlapEquipmentNames(res.overlapMessage || ''));
+      if (!hasIssue) scheduleBannerAutoHide_(4000);
+      // 他の人が同時に追加している場合などに備え、正式なデータには裏側で揃える
+      // （画面はすでに更新済みなので、この完了を待たせない）。
+      refreshBookings(true);
     }).catch(function (err) {
       hideLoading();
       showFormError('通信エラー: ' + err.message);
@@ -2837,49 +2953,58 @@
 
   function deleteCurrentBooking() {
     if (!editingRow) return;
-    var ok = window.confirm('この予約を削除します。よろしいですか？\n（削除した直後は「元に戻す」で復元できます）');
-    if (!ok) return;
+    // 【2026/9/2変更】window.confirm()は端末やブラウザによって画面の一番上に
+    // 小さく出てしまい押しにくいという声があったため、アプリ自身の見た目で
+    // 画面中央に出る確認ポップ（showConfirmDialog）に置き換えた。
+    showConfirmDialog(
+      'この予約を削除します。よろしいですか？\n（削除した直後は「元に戻す」で復元できます）',
+      { okLabel: '削除する', danger: true }
+    ).then(function (ok) {
+      if (!ok) return;
 
-    // 【2026/8/27追加】誤って削除してしまったときにその場で気づいて直せるよう、
-    // 削除する前にフォームに表示されている内容を控えておく。「元に戻す」は
-    // 「まったく同じ内容でもう一度予約を追加する」だけで実現する（専用のAPIを
-    // 新設する必要がないので、GAS側の再デプロイなしでこの機能を使える）。
-    // 行番号までは元の場所に戻せない（一覧の並び順が少し変わることがある）が、
-    // 作品名・機材名・数量・発注先・期間・備考の内容はまったく同じ予約として復活する。
-    var restoreBody = {
-      action: 'addBooking',
-      project: (document.getElementById('f-project').value === PROJECT_CUSTOM_VALUE)
-        ? document.getElementById('f-project-custom').value.trim()
-        : document.getElementById('f-project').value,
-      equipment: getSelectedEquipmentName_(),
-      quantity: (function () {
-        var q = document.getElementById('f-quantity').value.trim();
-        return q ? Number(q) : undefined;
-      })(),
-      supplier: document.getElementById('f-supplier').value,
-      startDate: fromDateInputValue(document.getElementById('f-start').value),
-      endDate: fromDateInputValue(document.getElementById('f-end').value),
-      note: document.getElementById('f-note').value.trim()
-    };
+      // 【2026/8/27追加】誤って削除してしまったときにその場で気づいて直せるよう、
+      // 削除する前にフォームに表示されている内容を控えておく。「元に戻す」は
+      // 「まったく同じ内容でもう一度予約を追加する」だけで実現する（専用のAPIを
+      // 新設する必要がないので、GAS側の再デプロイなしでこの機能を使える）。
+      // 行番号までは元の場所に戻せない（一覧の並び順が少し変わることがある）が、
+      // 作品名・機材名・数量・発注先・期間・備考の内容はまったく同じ予約として復活する。
+      var deletedRow = editingRow;
+      var restoreBody = {
+        action: 'addBooking',
+        project: (document.getElementById('f-project').value === PROJECT_CUSTOM_VALUE)
+          ? document.getElementById('f-project-custom').value.trim()
+          : document.getElementById('f-project').value,
+        equipment: getSelectedEquipmentName_(),
+        quantity: (function () {
+          var q = document.getElementById('f-quantity').value.trim();
+          return q ? Number(q) : undefined;
+        })(),
+        supplier: document.getElementById('f-supplier').value,
+        startDate: fromDateInputValue(document.getElementById('f-start').value),
+        endDate: fromDateInputValue(document.getElementById('f-end').value),
+        note: document.getElementById('f-note').value.trim()
+      };
 
-    showLoading('削除中...');
-    apiPost({ action: 'deleteBooking', row: editingRow }).then(function (res) {
-      if (!res.ok) {
-        hideLoading();
-        showFormError(res.error || '削除に失敗しました');
-        return;
-      }
-      // 【2026/8/27修正】上と同じ理由で静かなモードに変更。
-      // 【2026/8/27再修正】削除はシート全体の重複チェックを行っていないため、
-      // 削除した機材がまだ重複しているかどうかは、最新の予約データが揃ってから
-      // （refreshBookings完了後に）手元で判定する必要がある。そのため、
-      // 「元に戻す」バナーの表示もrefreshBookingsの完了を待ってから行うようにした。
-      // 【2026/8/28再修正】closeForm()も、この最新データ取得の後に呼ぶよう順番を
-      // 変更した。closeForm()はその場でformReturnAction（重複ピッカーへ「戻る」
-      // 処理）を実行するが、以前はこれをrefreshBookings完了より先に行っていたため、
-      // まだ削除前の古いbookingsのままピッカーが「まだ2件重複している」と誤判定し、
-      // 削除して直したはずなのに同じピッカー画面に留まり続ける不具合があった。
-      return refreshBookings(true).then(function () {
+      showLoading('削除中...');
+      apiPost({ action: 'deleteBooking', row: deletedRow }).then(function (res) {
+        if (!res.ok) {
+          hideLoading();
+          showFormError(res.error || '削除に失敗しました');
+          return;
+        }
+        // 【2026/9/2速度改善】以前はここで毎回refreshBookings（機材一覧全体の
+        // 再取得）が終わるのを待ってから画面を閉じており、これが「削除に約10秒」
+        // という体感の待ち時間の主な原因になっていた。削除は「1件減らすだけ」の
+        // 操作で他の予約の内容は変わらないため、サーバー側の削除が成功した時点で、
+        // 手元のbookings配列から削除した1件をその場で取り除くだけで、再取得した
+        // 場合とまったく同じ状態になる。再取得を待たずにそのまま画面を閉じ、
+        // 実際のrefreshBookingsは裏側で（画面を待たせずに）行う。
+        var idx = -1;
+        for (var bi = 0; bi < bookings.length; bi++) {
+          if (bookings[bi].row === deletedRow) { idx = bi; break; }
+        }
+        if (idx !== -1) bookings.splice(idx, 1);
+
         hideLoading();
         // 【2026/8/28追加】pendingOverlapEquipmentの更新は、closeForm()より前に
         // 行っておく（削除した機材自身がまだ重複しているかを、この下の判定で使うため）。
@@ -2898,10 +3023,13 @@
           jumpToEquipmentCalendar(pendingOverlapEquipment[0]);
         }
         showUndoDeleteBanner_(restoreBody, res.message || '予約を削除しました。');
+        // 他の人が同時に編集している場合などに備え、正式なデータには裏側で揃える
+        // （画面はすでに更新済みなので、この完了を待たせない）。
+        refreshBookings(true);
+      }).catch(function (err) {
+        hideLoading();
+        showFormError('通信エラー: ' + err.message);
       });
-    }).catch(function (err) {
-      hideLoading();
-      showFormError('通信エラー: ' + err.message);
     });
   }
 
@@ -3071,25 +3199,26 @@
 
   // ---------- ガントチャート更新 ----------
   function refreshGanttChart() {
-    var ok = window.confirm('ガントチャートを最新の内容に更新します。よろしいですか？');
-    if (!ok) return;
-    showLoading('ガントチャートを更新中...（機材件数が多いと時間がかかります）');
-    apiPost({ action: 'refreshGantt' }).then(function (res) {
-      hideLoading();
-      if (!res.ok) {
-        showBanner(res.error || 'ガントチャートの更新に失敗しました', 'error');
-        return;
-      }
-      setOverlapStateFromAuthoritative_(res);
-      if (res.overlap) {
-        showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
-      } else {
-        showBanner(res.message || 'ガントチャートを更新しました。', 'info');
-        scheduleBannerAutoHide_(4000);
-      }
-    }).catch(function (err) {
-      hideLoading();
-      showBanner('通信エラー: ' + err.message, 'error');
+    showConfirmDialog('ガントチャートを最新の内容に更新します。よろしいですか？', { okLabel: '更新する' }).then(function (ok) {
+      if (!ok) return;
+      showLoading('ガントチャートを更新中...（機材件数が多いと時間がかかります）');
+      apiPost({ action: 'refreshGantt' }).then(function (res) {
+        hideLoading();
+        if (!res.ok) {
+          showBanner(res.error || 'ガントチャートの更新に失敗しました', 'error');
+          return;
+        }
+        setOverlapStateFromAuthoritative_(res);
+        if (res.overlap) {
+          showBanner((res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
+        } else {
+          showBanner(res.message || 'ガントチャートを更新しました。', 'info');
+          scheduleBannerAutoHide_(4000);
+        }
+      }).catch(function (err) {
+        hideLoading();
+        showBanner('通信エラー: ' + err.message, 'error');
+      });
     });
   }
 
@@ -3110,38 +3239,42 @@
   // 共有端末で使ったあとなどに、この端末に保存されているURL・合言葉・データキャッシュを
   // まとめて消して「未接続」の状態に戻す。背景画像（個人の好みの設定）はここでは消さない。
   function disconnectSettings() {
-    var ok = window.confirm('接続を解除します。この端末に保存されているWebアプリのURL・合言葉と、予約・機材データのキャッシュを削除します。よろしいですか？');
-    if (!ok) return;
+    showConfirmDialog(
+      '接続を解除します。この端末に保存されているWebアプリのURL・合言葉と、予約・機材データのキャッシュを削除します。よろしいですか？',
+      { okLabel: '解除する', danger: true }
+    ).then(function (ok) {
+      if (!ok) return;
 
-    try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* 無視 */ }
-    try { localStorage.removeItem('kizai_mobile_bookings_cache_v1'); } catch (e) { /* 無視 */ }
-    try { localStorage.removeItem('kizai_equipment_cache_v1'); } catch (e) { /* 無視 */ }
-    try { localStorage.removeItem('kizai_category_cache_v1'); } catch (e) { /* 無視 */ }
-    try { localStorage.removeItem('kizai_mobile_supplier_cache_v1'); } catch (e) { /* 無視 */ }
-    try { localStorage.removeItem('kizai_mobile_project_cache_v1'); } catch (e) { /* 無視 */ }
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* 無視 */ }
+      try { localStorage.removeItem('kizai_mobile_bookings_cache_v1'); } catch (e) { /* 無視 */ }
+      try { localStorage.removeItem('kizai_equipment_cache_v1'); } catch (e) { /* 無視 */ }
+      try { localStorage.removeItem('kizai_category_cache_v1'); } catch (e) { /* 無視 */ }
+      try { localStorage.removeItem('kizai_mobile_supplier_cache_v1'); } catch (e) { /* 無視 */ }
+      try { localStorage.removeItem('kizai_mobile_project_cache_v1'); } catch (e) { /* 無視 */ }
 
-    settings = { url: '', token: '' };
-    bookings = [];
-    equipmentList = [];
-    equipmentByCategory = {};
-    categoryOrder = [];
-    supplierList = [];
-    projectList = [];
-    dataLoaded = { equipment: false, bookings: false };
+      settings = { url: '', token: '' };
+      bookings = [];
+      equipmentList = [];
+      equipmentByCategory = {};
+      categoryOrder = [];
+      supplierList = [];
+      projectList = [];
+      dataLoaded = { equipment: false, bookings: false };
 
-    document.getElementById('settings-url').value = '';
-    document.getElementById('settings-token').value = '';
-    document.getElementById('settings-error').classList.remove('show');
-    // 【2026/8/28追加】以前は解除しても画面上はURL・合言葉の欄が空になるだけで、
-    // 「本当に解除できたのか」が分かりにくかった。はっきり伝わるよう、
-    // 緑色のメッセージで解除完了をその場に表示する（次にURL・合言葉を入力し
-    // 始めたり、この画面を開き直したりすると消える）。
-    var infoEl = document.getElementById('settings-info');
-    infoEl.textContent = '✅ 接続を解除しました（保存されていたURL・合言葉・予約データの一時保存を削除しました）。もう一度使うときは、URLと合言葉を入力してください。';
-    infoEl.classList.add('show');
-    renderCurrentView();
-    // hasSettings()がfalseになるため、設定シートはこのまま開いたまま
-    // （closeSettingsが「未設定なら閉じさせない」ため、自然と入力を促す状態になる）。
+      document.getElementById('settings-url').value = '';
+      document.getElementById('settings-token').value = '';
+      document.getElementById('settings-error').classList.remove('show');
+      // 【2026/8/28追加】以前は解除しても画面上はURL・合言葉の欄が空になるだけで、
+      // 「本当に解除できたのか」が分かりにくかった。はっきり伝わるよう、
+      // 緑色のメッセージで解除完了をその場に表示する（次にURL・合言葉を入力し
+      // 始めたり、この画面を開き直したりすると消える）。
+      var infoEl = document.getElementById('settings-info');
+      infoEl.textContent = '✅ 接続を解除しました（保存されていたURL・合言葉・予約データの一時保存を削除しました）。もう一度使うときは、URLと合言葉を入力してください。';
+      infoEl.classList.add('show');
+      renderCurrentView();
+      // hasSettings()がfalseになるため、設定シートはこのまま開いたまま
+      // （closeSettingsが「未設定なら閉じさせない」ため、自然と入力を促す状態になる）。
+    });
   }
 
   // ---------- 背景画像（お好みの写真を壁紙として設定） ----------
@@ -3389,6 +3522,26 @@
   document.getElementById('form-back').addEventListener('click', closeForm);
   document.getElementById('project-detail-back').addEventListener('click', closeProjectDetail);
   document.getElementById('equipment-detail-back').addEventListener('click', closeEquipmentCategoryDetail);
+  // 【2026/9/2追加】「戻る」ボタンを押さなくても、シートの外側（黒く暗くなっている
+  // 背景部分）をタップするだけで閉じられるようにする。.sheet-overlay自体は画面
+  // 全体を覆っているが、中の.sheet（シート本体）はクリックイベントが上の要素まで
+  // 伝わってくる（バブリング）ため、「クリックされた場所がオーバーレイ自身か」
+  // （＝シートの外側＝背景部分がタップされたか）をe.target===overlayで判定する。
+  // シート内側のボタンや入力欄をタップしたときはe.targetがそれらの子要素になる
+  // ため、ここでは閉じない。settings-overlayだけは、closeSettings自身が
+  // 「未接続の状態では閉じさせない」処理を持っているため、そのまま呼び出せば
+  // 自動的にその制約も守られる。
+  function bindOverlayTapOutside_(overlayId, closeFn) {
+    var overlay = document.getElementById(overlayId);
+    if (!overlay) return;
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeFn();
+    });
+  }
+  bindOverlayTapOutside_('settings-overlay', closeSettings);
+  bindOverlayTapOutside_('form-overlay', closeForm);
+  bindOverlayTapOutside_('project-detail-overlay', closeProjectDetail);
+  bindOverlayTapOutside_('equipment-detail-overlay', closeEquipmentCategoryDetail);
   document.getElementById('f-category').addEventListener('change', function () {
     populateEquipmentSelect(this.value, '');
     showFormMiniCalendar_('', ''); // カテゴリを変えると機材名の選択が空欄に戻るため、カレンダーも一旦隠す
