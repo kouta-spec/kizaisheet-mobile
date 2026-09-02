@@ -191,7 +191,7 @@
   #status-banner {
     display: none; position: fixed; left: 14px; right: 14px;
     top: calc(env(safe-area-inset-top) + 14px); z-index: 40;
-    max-width: 640px; margin: 0 auto; padding: 12px 14px; border-radius: 14px;
+    max-width: 640px; margin: 0 auto; padding: 12px 34px 12px 14px; border-radius: 14px;
     font-size: 13px; line-height: 1.5; white-space: pre-wrap;
     max-height: 70vh; overflow-y: auto;
     box-shadow: 0 8px 24px rgba(20,22,46,0.25);
@@ -200,6 +200,17 @@
   #status-banner.info { background: #e8ecfe; color: var(--blue-dark); }
   #status-banner.error { background: #ffe3e8; color: #c81e42; }
   #status-banner.warn { background: #fff2da; color: #a35a00; }
+  /* 【2026/9/2追加】「元に戻す（残り◯秒）」のように、最短でも12秒はその場に残り
+     続けるバナーが、次の操作の邪魔になる（下に隠れているカードやボタンへの
+     タップを吸い取ってしまう）という声があったため、いつでもすぐに手動で
+     閉じられる✕ボタンを追加する。 */
+  #status-banner .banner-close-btn {
+    position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%;
+    border: none; background: rgba(0,0,0,0.08); color: inherit; font-size: 13px; font-weight: 700;
+    line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  #status-banner .banner-close-btn:active { transform: scale(0.9); }
   /* 【2026/8/27追加】期間重複の警告バナーから、その機材のカレンダーへ直接飛べるボタン */
   #status-banner .banner-jump-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   #status-banner .banner-jump-btn {
@@ -745,12 +756,20 @@
         <input type="date" id="f-end">
       </div>
     </div>
+    <!-- 【2026/9/2追加】新規追加（複数選択）フォームでは、以前は発注先を機材ごとに
+         「リストに追加」した後でしか選べなかった。ここで先に選んでおけば、その後
+         「リストに追加」する機材すべての初期値になる（開始日・終了日・備考と同じ
+         扱い）。追加後もリスト側で機材ごとに個別に変更できる点は変わらない。 -->
+    <div class="field" id="multi-supplier-field">
+      <label>発注先（任意。ここで選ぶと、この後リストに追加する機材の初期値になります）</label>
+      <select id="f-multi-supplier"><option value="">（自社在庫・セット機材）</option></select>
+    </div>
     <div class="field">
       <label>備考</label>
       <input type="text" id="f-note">
     </div>
     <div class="hint" id="multi-date-hint" style="margin-top:-8px;">
-      ↑ここで入力した開始日・終了日・備考は、下で機材を「リストに追加」するときの初期値になります。追加したあとは機材ごとに個別に変更できます。
+      ↑ここで入力した開始日・終了日・発注先・備考は、下で機材を「リストに追加」するときの初期値になります。追加したあとは機材ごとに個別に変更できます。
     </div>
     <!-- 新規追加時：カテゴリ→機材名を選んで「リストに追加」を押すたびに、下に
          選択済み機材カード（機材ごとの数量・発注先入力）が積み上がっていく。
@@ -843,7 +862,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-02c';
+  var APP_BUILD_VERSION = '2026-09-02e';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -902,6 +921,16 @@
   // 閉じるタイミングで実行して元の画面を再構築する。使い終わったらnullに戻す。
   var formReturnAction = null;
   var projectDetailReturnAction = null;
+
+  // 【2026/9/2追加】「元に戻す」バナー（削除・修正の取り消し）は、フォームやシートが
+  // 一旦閉じたあとに表示される独立した通知のため、上のformReturnActionの仕組み
+  // （閉じるタイミングで一度だけ実行してnullに戻す）とは別に、「今、作品詳細
+  // シート・機材カレンダーの重複日ピッカー・機材カテゴリ詳細シートのどれかが
+  // 開いたままになっているか」を覚えておく必要がある。「元に戻す」が成功した
+  // 直後に、開いたままのシートがあればここから最新のbookingsで作り直す
+  // （refreshOpenDetailSheetsIfAny_）。
+  var openProjectSheetState = null; // null、または {kind:'project', projectName} か {kind:'dayPicker', equipmentName, dateStr, reopenDetail}
+  var openEquipmentDetailCategory = null; // null（未オープン）、またはカテゴリ名
 
   // ---------- 設定の読み書き ----------
   function loadSettings() {
@@ -1004,6 +1033,7 @@
       });
       el.appendChild(row);
     }
+    appendBannerCloseButton_(el);
     el.className = 'show ' + (type || 'info');
   }
 
@@ -1060,6 +1090,23 @@
   function hideBanner() {
     clearBannerAutoHide_();
     document.getElementById('status-banner').className = '';
+  }
+
+  // 【2026/9/2追加】バナーの内容を作り終えたあとに必ず呼ぶ。右上に✕ボタンを1つ
+  // 追加し、いつでもすぐ手動で閉じられるようにする（「元に戻す」の12秒カウント
+  // ダウンや、重複が残っている間ずっと表示され続ける警告など、自動では消えない
+  // バナーが次の操作の邪魔になるという声があったため）。
+  function appendBannerCloseButton_(el) {
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'banner-close-btn';
+    closeBtn.setAttribute('aria-label', '閉じる');
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      hideBanner();
+    });
+    el.appendChild(closeBtn);
   }
 
   // 【2026/8/27追加】追加・編集・まとめ追加・ガントチャート更新は、そのたびに
@@ -1142,6 +1189,7 @@
     var el = document.getElementById('status-banner');
     el.innerHTML = '';
     appendOverlapReminder_(el);
+    appendBannerCloseButton_(el);
     el.className = 'show warn';
   }
 
@@ -1329,6 +1377,7 @@
 
   // ---------- 作品の詳細シート ----------
   function openProjectDetail(projectName, items) {
+    openProjectSheetState = { kind: 'project', projectName: projectName };
     document.getElementById('project-detail-title').textContent = projectName;
     // 【2026/8/27追加】このシートは開くたびに中身を作り直しているだけで、スクロール
     // 位置は前回開いたとき（別の作品を見ていたときなど）のまま残ってしまっていた。
@@ -1385,6 +1434,7 @@
   }
   function closeProjectDetail() {
     hideProjectDetailOverlay_();
+    openProjectSheetState = null;
     // 【2026/8/27追加】このシートが機材カレンダー（重複日の予約選択）から
     // 開かれていた場合は、閉じたときに元の機材カレンダー画面へ戻す。
     if (projectDetailReturnAction) {
@@ -1420,6 +1470,7 @@
   // タップしたときに出す一覧シート。「作品詳細」と同じシート（項目カード一覧）を
   // 流用し、どの予約を編集するか選んでもらう。1件を選ぶとその編集フォームが開く。
   function openDayBookingPicker_(equipmentName, dateStr, dayBookings, reopenDetail) {
+    openProjectSheetState = { kind: 'dayPicker', equipmentName: equipmentName, dateStr: dateStr, reopenDetail: reopenDetail };
     resetProjectDetailScroll_();
     document.getElementById('project-detail-title').textContent = equipmentName + '（' + dateStr + '）';
     document.getElementById('project-detail-summary').textContent =
@@ -1796,7 +1847,32 @@
     openEquipmentCategoryDetail(categoryName || '全機材', names, built.byEquipment);
   }
 
+  // 【2026/9/2追加】「元に戻す」（削除・修正の取り消し）が成功したとき、その時点で
+  // 開いたままになっているシート（作品詳細・機材カレンダーの重複日ピッカー・
+  // 機材カテゴリ詳細）があれば、最新のbookingsから作り直して即座に反映する。
+  // 以前はこれらの画面を開き直さない限り、復元した内容（特に機材名の書きかえ）が
+  // 画面に反映されず、「機材シート側は直っているのにアプリの表示だけ古いまま」に
+  // なっていた。
+  function refreshOpenDetailSheetsIfAny_() {
+    if (document.getElementById('project-detail-overlay').classList.contains('show') && openProjectSheetState) {
+      if (openProjectSheetState.kind === 'project') {
+        reopenProjectDetailByName_(openProjectSheetState.projectName);
+      } else if (openProjectSheetState.kind === 'dayPicker') {
+        var freshDayBookings = getFreshDayBookings_(openProjectSheetState.equipmentName, openProjectSheetState.dateStr);
+        if (freshDayBookings.length >= 2) {
+          openDayBookingPicker_(openProjectSheetState.equipmentName, openProjectSheetState.dateStr, freshDayBookings, openProjectSheetState.reopenDetail);
+        } else if (openProjectSheetState.reopenDetail) {
+          openProjectSheetState.reopenDetail();
+        }
+      }
+    }
+    if (document.getElementById('equipment-detail-overlay').classList.contains('show') && openEquipmentDetailCategory !== null) {
+      reopenEquipmentDetailByCategory_(openEquipmentDetailCategory);
+    }
+  }
+
   function openEquipmentCategoryDetail(categoryName, names, byEquipment) {
+    openEquipmentDetailCategory = categoryName;
     document.getElementById('equipment-detail-title').textContent = categoryName;
     // 【2026/8/27追加】このシートの中（機材カレンダー）から予約フォームや重複日の
     // 予約選択シートを開いたときに、「戻る」でここへ戻ってこられるようにする。
@@ -1864,6 +1940,7 @@
   }
   function closeEquipmentCategoryDetail() {
     document.getElementById('equipment-detail-overlay').classList.remove('show');
+    openEquipmentDetailCategory = null;
   }
 
   function escapeHtml(s) {
@@ -1928,8 +2005,11 @@
     } catch (e) { /* 無視 */ }
   }
 
-  function populateSupplierSelect(selectedValue) {
-    var sel = document.getElementById('f-supplier');
+  // 【2026/9/2変更】新規追加（複数選択）フォームの上部にも発注先の選択欄
+  // （f-multi-supplier）を追加したため、対象の<select>のidを指定できるようにした
+  // （省略時は今まで通りf-supplier＝編集フォーム用）。中身の組み立て方はどちらも同じ。
+  function populateSupplierSelect(selectedValue, targetId) {
+    var sel = document.getElementById(targetId || 'f-supplier');
     var current = selectedValue !== undefined ? selectedValue : sel.value;
     sel.innerHTML = '';
     var placeholder = document.createElement('option');
@@ -2366,6 +2446,10 @@
     }
     var equipmentName = getSelectedEquipmentName_();
     renderFormMiniCalendarMonth_(equipmentName);
+    // 【2026/9/2追加】カレンダーで日付をタップした瞬間にも、選んでいる機材が
+    // 重複していればその場ですぐ警告する（「リストに追加」を押す前でも分かる
+    // ようにするため）。
+    updateSelectedEquipmentConflictWarning_();
   }
 
   // ---------- 追加・編集フォーム ----------
@@ -2382,6 +2466,11 @@
     document.getElementById('single-equipment-fields').style.display = 'none';
     document.getElementById('multi-equipment-fields').style.display = 'block';
     document.getElementById('multi-date-hint').style.display = 'block';
+    // 【2026/9/2追加】新規追加フォーム上部の発注先（この後リストに追加する機材の
+    // 初期値になる）。編集フォームでは単一選択のf-supplierを使うため、こちらは
+    // 新規追加のときだけ表示する。
+    document.getElementById('multi-supplier-field').style.display = 'block';
+    populateSupplierSelect('', 'f-multi-supplier');
     selectedEquipmentRows = [];
     renderSelectedEquipmentList();
     document.getElementById('form-delete').style.display = 'none';
@@ -2426,6 +2515,8 @@
     document.getElementById('single-equipment-fields').style.display = 'flex';
     document.getElementById('multi-equipment-fields').style.display = 'none';
     document.getElementById('multi-date-hint').style.display = 'none';
+    // 新規追加フォーム上部の発注先欄は、編集フォームでは使わない（f-supplierの方を使う）。
+    document.getElementById('multi-supplier-field').style.display = 'none';
     populateProjectSelect(b.project || '');
     var cat = findCategoryForEquipment(b.equipment);
     document.getElementById('f-category').value = cat;
@@ -2472,18 +2563,25 @@
     }
     hideEquipmentAddError();
     var defaultNote = document.getElementById('f-note').value.trim();
+    // 【2026/9/2追加】開始日・終了日・備考と同じく、フォーム上部で選んだ発注先
+    // （f-multi-supplier）を、これからリストに追加する機材の初期値として使う。
+    var defaultSupplier = document.getElementById('f-multi-supplier').value;
     selectedEquipmentRows.push({
       equipment: equipment,
       quantity: '',
-      supplier: '',
+      supplier: defaultSupplier,
       startDate: defaultStart,
       endDate: defaultEnd,
       note: defaultNote
     });
-    renderSelectedEquipmentList();
-    // 次の機材を選びやすいよう、機材名の選択だけ空欄に戻す（カテゴリ絞り込みは維持）。
+    // 【2026/9/2変更】次の機材を選びやすいよう、機材名の選択だけ空欄に戻す
+    // （カテゴリ絞り込みは維持）。renderSelectedEquipmentList()より先に空欄へ
+    // 戻すことで、「リストに追加」した直後にフォーム上部の選択中の内容（＝今まさに
+    // リストへ追加したばかりの機材・期間そのもの）が「仮の未追加行」として二重に
+    // カウントされ、自分自身と重複していると誤判定してしまう不具合を防ぐ。
     populateEquipmentSelect(document.getElementById('f-category').value, '');
     showFormMiniCalendar_('', ''); // 機材名が空欄に戻ったので、ミニカレンダーも一旦隠す
+    renderSelectedEquipmentList();
   }
 
   function buildSupplierSelectElement(idx, selectedValue) {
@@ -2531,6 +2629,7 @@
       empty.className = 'selected-eq-empty';
       empty.textContent = '機材が選択されていません。上でカテゴリ・機材名を選んで「リストに追加」を押してください。';
       listEl.appendChild(empty);
+      updateSelectedEquipmentConflictWarning_();
       return;
     }
     selectedEquipmentRows.forEach(function (row, idx) {
@@ -2558,6 +2657,9 @@
       nameInput.value = row.equipment;
       nameInput.addEventListener('input', function () {
         selectedEquipmentRows[idx].equipment = nameInput.value;
+        // 【2026/9/2追加】機材名を書きかえたことで、リスト内の重複が直った・
+        // 新たに発生した、のどちらの場合もその場ですぐ警告表示に反映する。
+        updateSelectedEquipmentConflictWarning_();
       });
       var removeBtn = document.createElement('button');
       removeBtn.type = 'button';
@@ -2616,6 +2718,9 @@
       startInput.value = toDateInputValue(row.startDate);
       startInput.addEventListener('change', function () {
         selectedEquipmentRows[idx].startDate = fromDateInputValue(startInput.value);
+        // 【2026/9/2追加】日付を直したことで重複が直った・新たに発生した、の
+        // どちらの場合もその場ですぐ警告表示に反映する。
+        updateSelectedEquipmentConflictWarning_();
       });
       startField.appendChild(startLabel);
       startField.appendChild(startInput);
@@ -2629,6 +2734,9 @@
       endInput.value = toDateInputValue(row.endDate);
       endInput.addEventListener('change', function () {
         selectedEquipmentRows[idx].endDate = fromDateInputValue(endInput.value);
+        // 【2026/9/2追加】日付を直したことで重複が直った・新たに発生した、の
+        // どちらの場合もその場ですぐ警告表示に反映する。
+        updateSelectedEquipmentConflictWarning_();
       });
       endField.appendChild(endLabel);
       endField.appendChild(endInput);
@@ -2655,6 +2763,64 @@
 
       listEl.appendChild(box);
     });
+    updateSelectedEquipmentConflictWarning_();
+  }
+
+  // 【2026/9/2追加】「＋この機材をリストに追加」の時点でのブロック（addSelectedEquipment
+  // 内のconflictRowチェック）とは別に、次の2つの場合にもその場ですぐ赤字の警告を
+  // 出し分けする（消える規則も含めて同じ仕組みで判定し直す）。
+  // 1. 一度リストに追加したあとで機材名や日付を書きかえて、リストの中の重複が
+  // 　直った・新たに発生した場合（以前からの分）。
+  // 2. まだ「リストに追加」していない、フォーム上部（カテゴリ→機材名→カレンダー）で
+  // 　選択中の機材・期間が、リストの中の他の機材、または機材シートにすでに
+  // 　保存されている予約と重なっている場合（2026/9/2追加分。以前は「リストに追加」
+  // 　してからでないと重複に気づけなかった）。
+  function updateSelectedEquipmentConflictWarning_() {
+    var multiVisible = document.getElementById('multi-equipment-fields').style.display !== 'none';
+    if (!multiVisible) { hideEquipmentAddError(); return; }
+
+    var rows = selectedEquipmentRows.slice();
+    // フォーム上部で選択中（まだ「リストに追加」を押していない）の機材・期間を、
+    // 仮の1件としてrowsに加えておくと、下のチェックがそのまま流用できる。
+    var pendingEquipment = getSelectedEquipmentName_();
+    var pendingStart = fromDateInputValue(document.getElementById('f-start').value);
+    var pendingEnd = fromDateInputValue(document.getElementById('f-end').value);
+    if (pendingEquipment && pendingStart && pendingEnd) {
+      rows = rows.concat([{ equipment: pendingEquipment, startDate: pendingStart, endDate: pendingEnd }]);
+    }
+
+    var conflictNames = [];
+    var seen = {};
+    for (var i = 0; i < rows.length; i++) {
+      for (var j = i + 1; j < rows.length; j++) {
+        var a = rows[i], b = rows[j];
+        if (a.equipment && a.equipment === b.equipment &&
+            dateRangesOverlap_(a.startDate, a.endDate, b.startDate, b.endDate)) {
+          if (!seen[a.equipment]) { seen[a.equipment] = true; conflictNames.push(a.equipment); }
+        }
+      }
+    }
+
+    // 機材シートにすでに保存されている予約（自社在庫、発注先なし）との重複も
+    // 同じように警告する。発注先ありの予約は、他の重複チェックと同じく対象外
+    // にする（レンタル品は同じ名前でも複数を同時に借りることがあるため）。
+    rows.forEach(function (r) {
+      if (!r.equipment || seen[r.equipment]) return;
+      var conflictsWithExisting = bookings.some(function (b) {
+        return !b.supplier && b.equipment === r.equipment &&
+          dateRangesOverlap_(b.startDate, b.endDate, r.startDate, r.endDate);
+      });
+      if (conflictsWithExisting) { seen[r.equipment] = true; conflictNames.push(r.equipment); }
+    });
+
+    if (conflictNames.length > 0) {
+      showEquipmentAddError(
+        conflictNames.map(function (n) { return '「' + n + '」'; }).join('、') +
+        'の期間が重複しています。日付を確認してください。'
+      );
+    } else {
+      hideEquipmentAddError();
+    }
   }
 
   function toDateInputValue(yyyymmddSlash) {
@@ -3060,6 +3226,7 @@
     // バナーに上書きされて消えてしまっていた（実際にはまだ直っていないのに）。
     // 「元に戻す」と合わせて、まだ残っている重複警告もここに表示しておく。
     appendOverlapReminder_(el);
+    appendBannerCloseButton_(el);
 
     el.className = 'show warn';
 
@@ -3088,7 +3255,28 @@
           showBanner('復元に失敗しました: ' + (res.error || '') + '\n\n作品名・機材名などを確認のうえ、手動で追加し直してください。', 'error');
           return;
         }
-        refreshBookings(true);
+        // 【2026/9/2不具合修正】以前はrefreshBookings（再取得）が裏側で終わるのを
+        // 待つだけで、開いていたシート（作品詳細・機材カレンダーの重複日ピッカー等）
+        // 自体は再取得だけでは自動的に作り直されないため、「機材シート側は復元
+        // されているのに、アプリの表示（特に機材名）だけ元の（削除後の）まま」に
+        // なることがあった（タブを切り替えて開き直すと直る）。復元にあたって
+        // 送った内容（restoreBody）と、サーバーが割り振った行番号（res.row）で、
+        // その場ですぐ手元のbookings配列に反映し、開いているシートがあれば
+        // 作り直してから画面を更新する。
+        bookings.push({
+          row: res.row,
+          project: restoreBody.project,
+          equipment: restoreBody.equipment,
+          quantity: restoreBody.quantity || '',
+          startDate: restoreBody.startDate,
+          endDate: restoreBody.endDate,
+          supplier: restoreBody.supplier || '',
+          note: restoreBody.note || '',
+          returnCheck: '',
+          price: ''
+        });
+        renderCurrentView();
+        refreshOpenDetailSheetsIfAny_();
         // 復元（addBooking）はシート全体を再チェックしているので、その結果で
         // pendingOverlapEquipmentを置き換える（他の機材の分もここで最新化される）。
         setOverlapStateFromAuthoritative_(res);
@@ -3098,6 +3286,9 @@
           showBanner('元に戻しました。', 'info');
           scheduleBannerAutoHide_(4000);
         }
+        // 他の人が同時に編集している場合などに備え、正式なデータには裏側で揃える
+        // （画面はすでに更新済みなので、この完了を待たせない）。
+        refreshBookings(true);
       }).catch(function (err) {
         showBanner('通信エラー: ' + err.message, 'error');
       });
@@ -3174,7 +3365,27 @@
             showBanner('修正前の内容への復元に失敗しました: ' + (res.error || '') + '\n\n内容を確認のうえ、手動で直してください。', 'error');
             return;
           }
-          refreshBookings(true);
+          // 【2026/9/2不具合修正】上のshowUndoDeleteBanner_と同じ理由で、再取得
+          // （refreshBookings）の完了を待つだけでは、開いていたシートの表示
+          // （特に機材名）が古いまま残ってしまうことがあった。復元にあたって
+          // 送った内容（restoreBody、同じ行番号への書き戻し）で、その場ですぐ
+          // 手元のbookings配列を書き換え、開いているシートがあれば作り直してから
+          // 画面を更新する。
+          var target = null;
+          for (var ri = 0; ri < bookings.length; ri++) {
+            if (bookings[ri].row === restoreBody.row) { target = bookings[ri]; break; }
+          }
+          if (target) {
+            target.project = restoreBody.project;
+            target.equipment = restoreBody.equipment;
+            target.quantity = restoreBody.quantity || '';
+            target.supplier = restoreBody.supplier || '';
+            target.startDate = restoreBody.startDate;
+            target.endDate = restoreBody.endDate;
+            target.note = restoreBody.note || '';
+          }
+          renderCurrentView();
+          refreshOpenDetailSheetsIfAny_();
           setOverlapStateFromAuthoritative_(res);
           if (res.overlap) {
             showBanner('修正前の内容に戻しました。\n\n' + (res.overlapMessage ? res.overlapMessage + '\n\n' : '') + res.message, 'warn', extractOverlapEquipmentNames(res.overlapMessage));
@@ -3182,12 +3393,16 @@
             showBanner('修正前の内容に戻しました。', 'info');
             scheduleBannerAutoHide_(4000);
           }
+          // 他の人が同時に編集している場合などに備え、正式なデータには裏側で揃える
+          // （画面はすでに更新済みなので、この完了を待たせない）。
+          refreshBookings(true);
         }).catch(function (err) {
           showBanner('通信エラー: ' + err.message, 'error');
         });
       });
     }
 
+    appendBannerCloseButton_(el);
     el.className = 'show ' + (type || 'info');
     // 復元データが無いフォールバックの場合だけ、警告・エラーでなければ今まで通り
     // 自動的にバナーを消す（「修正前に戻す」ボタンがある場合は、12秒のカウント
@@ -3485,6 +3700,11 @@
     populateCategorySelect();
     var catSel = document.getElementById('f-category');
     populateEquipmentSelect(catSel.value, undefined);
+    // 【2026/9/2追加】新規追加フォーム上部の発注先欄（表示中のときだけ）も、
+    // 発注先一覧が裏側で更新された場合に古いままにならないようにする。
+    if (document.getElementById('multi-supplier-field').style.display !== 'none') {
+      populateSupplierSelect(undefined, 'f-multi-supplier');
+    }
   }
 
   document.getElementById('settings-btn').addEventListener('click', openSettings);
@@ -3593,6 +3813,15 @@
     formCalRangeStart = null;
     refreshFormMiniCalendar_();
   });
+  // 【2026/9/2追加】カテゴリ・機材名を選び直したとき、または開始日・終了日を
+  // テキスト/カレンダーピッカーで直接書き換えたときにも、「リストに追加」を
+  // 押す前の時点でその場ですぐ重複警告を出し分ける（updateSelectedEquipmentConflictWarning_
+  // 側で、複数選択フォームが表示されているときだけ判定するようになっている）。
+  document.getElementById('f-category').addEventListener('change', updateSelectedEquipmentConflictWarning_);
+  document.getElementById('f-equipment').addEventListener('change', updateSelectedEquipmentConflictWarning_);
+  document.getElementById('f-equipment-custom').addEventListener('input', updateSelectedEquipmentConflictWarning_);
+  document.getElementById('f-start').addEventListener('change', updateSelectedEquipmentConflictWarning_);
+  document.getElementById('f-end').addEventListener('change', updateSelectedEquipmentConflictWarning_);
   document.getElementById('f-project').addEventListener('change', function () {
     updateProjectCustomInputVisibility();
     if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
