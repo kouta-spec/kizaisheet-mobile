@@ -742,6 +742,14 @@
       <button type="button" id="f-equipment-rename-btn" class="equip-rename-link" style="display:none;">✎ 選んだ機材名を書きかえる</button>
       <input type="text" id="f-equipment-custom" placeholder="新しい機材名を入力" style="display:none; margin-top:6px;">
     </div>
+    <!-- 【2026/9/2追加】予約を修正する画面（編集フォーム）を開いた直後は、以前は
+         この下の予約状況カレンダーがいきなり表示されていた。リストの項目を選び
+         直すときと同じ「ボタンを押してからカレンダーを見る」という操作に統一する
+         ため、編集フォームでは最初はこのボタンだけを出し、押したときにカレンダーを
+         表示するようにした。新規追加（複数選択）フォームの、機材を選んだ直後の
+         カレンダーはこれまで通り自動で表示される（このボタンは編集フォームのときだけ
+         使う）。 -->
+    <button type="button" id="edit-mini-cal-btn" class="selected-eq-cal-btn" style="display:none;">📅 使用状況を見ながら日付を選び直す</button>
     <!-- 【2026/8/29追加】機材名を選ぶと、その機材の予約状況（空き・使用中）を
          ミニカレンダーで確認しながら、日付をタップして開始日・終了日を選べるように
          した（機材の状況タブのミニカレンダーと同じ見た目）。テキスト・カレンダー
@@ -765,6 +773,14 @@
       </div>
       <div class="form-mc-hint-box state-start" id="form-mc-hint">👆 開始日をタップしてください</div>
     </div>
+    <!-- 【2026/9/2移動】機材の重複警告は、以前は「＋この機材をリストに追加」
+         ボタンの下（数量・発注先・日付など他の入力欄をすべて挟んだ、かなり
+         下の位置）に出ていた。カレンダーで日付を選んだ瞬間にも警告が出る
+         ようになったため、カレンダーのすぐ下に出す方が分かりやすい。
+         あえてform-mini-cal-fieldの外に置いているのは、カレンダーがまだ
+         表示されていない（機材未選択の）状態でも、「機材名を選択してください」
+         等のエラーがきちんと見えるようにするため。 -->
+    <div class="form-error" id="equipment-add-error"></div>
     <!-- 編集時（既存の1件のみ）はここで数量・発注先を直接入力 -->
     <div id="single-equipment-fields" class="field-row">
       <div class="field">
@@ -809,11 +825,6 @@
          ボタン・リストは備考欄より下に配置している。） -->
     <div id="multi-equipment-fields">
       <button type="button" class="btn secondary" id="equipment-add-btn" style="width:100%;">＋ この機材をリストに追加</button>
-      <!-- 【2026/8/27追加】「機材名を選択してください」等のエラーが、フォーム下部の
-           共通エラー表示（#form-error）に出ると、選択済み機材の件数が多いときは
-           このボタンから離れた場所に出て気づきにくかった。ボタンのすぐ下に
-           専用のエラー表示を置く。 -->
-      <div class="form-error" id="equipment-add-error"></div>
       <div id="selected-equipment-list"></div>
     </div>
     <div class="form-error" id="form-error"></div>
@@ -892,7 +903,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-02f';
+  var APP_BUILD_VERSION = '2026-09-02g';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2303,6 +2314,9 @@
       return;
     }
     wrap.style.display = 'block';
+    // 【2026/9/2追加】編集フォームの「使用状況を見ながら日付を選び直す」ボタンは、
+    // カレンダーが実際に表示されているときは不要（二重表示を避ける）なので隠す。
+    document.getElementById('edit-mini-cal-btn').style.display = 'none';
     var base = baseDateStr ? parseSlashDateParts_(baseDateStr) : null;
     var now = new Date();
     formCalYear = base ? base.y : now.getFullYear();
@@ -2605,6 +2619,9 @@
     renderSelectedEquipmentList();
     document.getElementById('form-delete').style.display = 'none';
     showFormMiniCalendar_('', ''); // 機材未選択の状態なので、ミニカレンダーは隠す
+    // 【2026/9/2追加】「使用状況を見ながら日付を選び直す」ボタンは編集フォーム専用
+    // なので、新規追加フォームでは常に隠しておく。
+    document.getElementById('edit-mini-cal-btn').style.display = 'none';
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -2660,7 +2677,17 @@
     // 編集（単一）フォームはselectedEquipmentRowsを使わないため、複数選択フォーム側の
     // 「未追加なら保存不可」状態が残ったままにならないよう、必ず押せる状態に戻す。
     updateFormSaveButtonState();
-    showFormMiniCalendar_(b.equipment || '', b.startDate || '');
+    // 【2026/9/2変更】以前はここで予約状況カレンダーをすぐに表示していたが、
+    // リストの項目を選び直すときと同じ「ボタンを押してから見る」という操作に
+    // 統一するため、編集フォームを開いた直後はカレンダーを隠し、代わりに
+    // 「使用状況を見ながら日付を選び直す」ボタンだけを表示する。
+    document.getElementById('form-mini-cal-field').style.display = 'none';
+    document.getElementById('form-mc-target-banner').style.display = 'none';
+    formCalRangeStart = null;
+    formCalYear = null;
+    formCalMonth = null;
+    miniCalTargetRowIndex = null;
+    document.getElementById('edit-mini-cal-btn').style.display = b.equipment ? 'block' : 'none';
     hideFormError();
     document.getElementById('form-overlay').classList.add('show');
   }
@@ -3994,6 +4021,12 @@
   // 【2026/9/2追加】「この機材の予約状況」ミニカレンダーで、リストの項目を選び直し
   // 中のときに出す「✕ やめる」ボタン。
   document.getElementById('form-mc-target-exit-btn').addEventListener('click', exitMiniCalRowTarget_);
+  // 【2026/9/2追加】編集フォームの「使用状況を見ながら日付を選び直す」ボタン。
+  // 押すとその機材の予約状況カレンダーを表示する（以降はリストの項目のときと
+  // 同じく、showFormMiniCalendar_がボタン自体を隠す）。
+  document.getElementById('edit-mini-cal-btn').addEventListener('click', function () {
+    showFormMiniCalendar_(getSelectedEquipmentName_(), fromDateInputValue(document.getElementById('f-start').value));
+  });
   document.getElementById('f-project').addEventListener('change', function () {
     updateProjectCustomInputVisibility();
     if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
