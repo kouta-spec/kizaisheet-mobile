@@ -301,6 +301,19 @@
     background: repeating-linear-gradient(135deg, #c81e42, #c81e42 4px, #ff95a8 4px, #ff95a8 8px);
     color: white; font-weight: 800; box-shadow: 0 0 0 2px #8a0f2b inset;
   }
+  /* 【2026/9/2追加】発注先（レンタル）ありの予約の期間を示す表示。以前は予約フォームの
+     ミニカレンダーで発注先ありの予約が何も表示されず「その機材、もう発注済みなのに
+     空いて見える」と分かりにくかったため、自社機材（mc-booked、赤）とは別の色
+     （オレンジ）で、開始日〜終了日までしっかり塗りつぶす。同じ機材名で発注先ありの
+     予約が2件以上重なっている日だけは、それとも見分けられるよう縞模様にする
+     （ただし、レンタル品は同じ名前でも複数台を同時に借りることが普通にあり得るため、
+     こちらは「重複警告」の仕組み（バナー・ヘッダーの件数バッジ）には一切繋げず、
+     あくまでこのカレンダーの中だけの見た目の違いにとどめている）。 */
+  .mc-cell.mc-booked-rental { background: var(--orange); color: white; font-weight: 700; }
+  .mc-cell.mc-overlap-rental {
+    background: repeating-linear-gradient(135deg, #a35a00, #a35a00 4px, #ffcb80 4px, #ffcb80 8px);
+    color: white; font-weight: 800; box-shadow: 0 0 0 2px #7a4300 inset;
+  }
   .mc-cell.mc-today { box-shadow: 0 0 0 2px var(--blue) inset; font-weight: 800; }
   /* 【2026/8/29追加】予約フォーム内のミニカレンダーで、タップして選んだ開始日・
      終了日（と、その間の日）を示す色。既存の「予約あり（赤）」「重複（縞模様）」とは
@@ -771,7 +784,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-01e';
+  var APP_BUILD_VERSION = '2026-09-02a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1533,8 +1546,15 @@
   // （自社在庫同士の取り合いだけを「重複」として扱うため）。
   function computeOverlapDateSet_(itemBookings) {
     var relevant = itemBookings.filter(function (b) { return !b.supplier; });
+    return computeOverlapDateSetFromList_(relevant);
+  }
+
+  // 【2026/9/2追加】上のcomputeOverlapDateSet_から「発注先ありを除外する」部分を
+  // 切り出した下請け関数。発注先ありの予約同士の重複（同じレンタル品名を2件以上
+  // 同時に借りている日）を別途調べたいところでも、この共通ロジックをそのまま使う。
+  function computeOverlapDateSetFromList_(list) {
     var counts = {};
-    relevant.forEach(function (b) {
+    list.forEach(function (b) {
       var parts = parseSlashDateParts_(b.startDate);
       var endParts = parseSlashDateParts_(b.endDate);
       if (!parts || !endParts) return;
@@ -2123,6 +2143,15 @@
       return b;
     });
     var overlapDateSet = computeOverlapDateSet_(overlapCheckBookings);
+    // 【2026/9/2追加】発注先ありの予約同士（同じレンタル品名を2件以上同時に借りている
+    // 日）だけを別に調べる。自社機材の重複（overlapDateSet、赤）とは完全に別扱いで、
+    // バナーやヘッダーの重複件数バッジには一切影響させない（レンタル品は同じ名前でも
+    // 複数台同時に借りるのが普通にあり得るため）。あくまでこのミニカレンダーの中で、
+    // 「発注先ありの予約が重なっている日」をオレンジの縞模様で分かりやすくするためだけ
+    // に使う。
+    var rentalOverlapDateSet = computeOverlapDateSetFromList_(
+      overlapCheckBookings.filter(function (b) { return !!b.supplier; })
+    );
     // 【2026/8/29再々修正】単なる「予約あり（赤一色）」表示は、以前は編集中の予約自体を
     // 除いた「他の予約」だけを対象にしていた（自分自身の使用日が選択色の青で塗られ、
     // 使用中を示す赤にならなかった）。しかし「機材の使用日は開始日〜終了日まで、
@@ -2162,6 +2191,11 @@
       // 発注先ありの予約はその機材自身の稼働状況として扱わない、という考え方に揃える。
       var booked = itemBookings.some(function (b) { return !b.supplier && b.startDate <= dStr && dStr <= b.endDate; });
       var isOverlapDay = !!overlapDateSet[dStr];
+      // 【2026/9/2追加】発注先ありの予約の「予約あり（オレンジ）」判定と、その中での
+      // 重複（オレンジの縞模様）判定。自社機材のbooked/isOverlapDayとは完全に別の色・
+      // 別のSetで扱う（上のcomputeOverlapDateSetFromList_の呼び出し箇所を参照）。
+      var rentalBooked = itemBookings.some(function (b) { return !!b.supplier && b.startDate <= dStr && dStr <= b.endDate; });
+      var isRentalOverlapDay = !!rentalOverlapDateSet[dStr];
       var inSelectedRange = !!(startVal && endVal && startVal <= dStr && dStr <= endVal);
       var isEndpoint = (dStr === startVal || dStr === endVal);
       // 【2026/8/29修正】重複日(isOverlapDay)は、選択中の期間と重なっていても
@@ -2179,8 +2213,14 @@
       if (isOverlapDay) {
         cls += ' mc-overlap';
         if (isEndpoint || inSelectedRange) cls += ' mc-selected-ring';
+      } else if (isRentalOverlapDay) {
+        cls += ' mc-overlap-rental';
+        if (isEndpoint || inSelectedRange) cls += ' mc-selected-ring';
       } else if (booked) {
         cls += ' mc-booked';
+        if (isEndpoint || inSelectedRange) cls += ' mc-selected-ring';
+      } else if (rentalBooked) {
+        cls += ' mc-booked-rental';
         if (isEndpoint || inSelectedRange) cls += ' mc-selected-ring';
       } else if (isEndpoint) {
         cls += ' mc-select-endpoint';
