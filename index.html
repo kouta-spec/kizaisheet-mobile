@@ -551,6 +551,29 @@
   .selected-eq-row .field { margin-bottom: 0; }
   .selected-eq-empty { font-size: 13px; color: var(--sub); padding: 14px 4px; text-align: center; }
 
+  /* 【2026/9/2追加】リストに追加済みの項目の日付を、テキスト欄への直接入力だけでなく、
+     上部の「この機材の予約状況」ミニカレンダーを使って（他の予約・他の未追加項目を
+     見ながら）選び直せるようにするためのボタンと、選び直し中であることを示す枠線。 */
+  .selected-eq-cal-btn {
+    display: block; width: 100%; margin: 8px 0 10px; padding: 8px 10px;
+    border: 1px dashed var(--blue-dark); border-radius: 10px; background: #fff;
+    color: var(--blue-dark); font-size: 12.5px; font-weight: 700; cursor: pointer;
+    transition: transform 0.1s ease-out;
+  }
+  .selected-eq-cal-btn:active { transform: scale(0.97); }
+  .selected-eq-row.is-cal-target { border-color: var(--blue-dark); box-shadow: 0 0 0 2px var(--blue-dark) inset; }
+  .selected-eq-cal-btn.is-active { background: var(--blue-dark); color: #fff; border-style: solid; }
+  /* 上部ミニカレンダーが「リストの項目を選び直し中」のときに出す案内帯。 */
+  .form-mc-target-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin-top: 6px; padding: 8px 10px; border-radius: 10px;
+    background: var(--blue-dark); color: #fff; font-size: 12.5px; font-weight: 700;
+  }
+  .form-mc-target-banner button {
+    flex: 0 0 auto; background: rgba(255,255,255,0.18); border: none; color: #fff;
+    font-size: 12px; font-weight: 700; border-radius: 8px; padding: 5px 9px; cursor: pointer;
+  }
+
   .spinner {
     display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4);
     border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px;
@@ -725,6 +748,13 @@
          ピッカーでの入力も引き続きそのまま使える。 -->
     <div class="field" id="form-mini-cal-field" style="display:none;">
       <label>この機材の予約状況（タップで開始日→終了日を選べます）</label>
+      <!-- 【2026/9/2追加】リストに追加済みの項目の日付を、このカレンダーを使って
+           選び直しているときに表示する案内帯。「やめる」でフォーム上部（次に新しく
+           追加する項目）の選択に戻る。 -->
+      <div class="form-mc-target-banner" id="form-mc-target-banner" style="display:none;">
+        <span id="form-mc-target-text"></span>
+        <button type="button" id="form-mc-target-exit-btn">✕ やめる</button>
+      </div>
       <div class="mini-cal" id="form-mini-cal" style="margin-top:6px; padding-top:0; border-top:none;">
         <div class="mini-cal-nav">
           <button type="button" class="mc-prev" id="form-mc-prev">‹</button>
@@ -862,7 +892,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-02e';
+  var APP_BUILD_VERSION = '2026-09-02f';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -914,6 +944,10 @@
   // 予約状況を見ながら日付をタップして開始日・終了日を選べる）の表示状態。
   var formCalYear = null, formCalMonth = null; // 現在表示中の年・月（nullなら未初期化）
   var formCalRangeStart = null; // 1回目のタップで選んだ開始日（"YYYY/MM/DD"）。2回目のタップ待ちのときだけ値が入る。
+  // 【2026/9/2追加】このミニカレンダーが今どの日付を編集対象にしているか。
+  // null＝フォーム上部（これから「リストに追加」する、まだ未追加のペンディング項目）が対象。
+  // 数値＝selectedEquipmentRows[その番号]（すでにリストに追加済みの項目）を選び直し中。
+  var miniCalTargetRowIndex = null;
 
   // 【2026/8/27追加】「戻る」を押したときに一つ前の画面（詳細シート）へ正しく
   // 戻れるようにするための仕組み。予約フォーム・作品詳細シート（重複時の
@@ -2251,9 +2285,18 @@
    * baseDateStr（"YYYY/MM/DD"、省略可）を渡すと、その日を含む月を最初に表示する。
    */
   function showFormMiniCalendar_(equipmentName, baseDateStr) {
+    // 【2026/9/2追加】このカレンダーを「フォーム上部（これから新しく追加する項目）」
+    // の対象として呼び出すすべての箇所で、以前リストの項目を選び直していた状態
+    // （miniCalTargetRowIndex）を必ず解除する。呼び分けを一箇所にまとめることで、
+    // 「リストの項目を選び直しているつもりが、実は上部の次の項目を編集していた」
+    // というすれ違いを防ぐ。
+    miniCalTargetRowIndex = null;
     var wrap = document.getElementById('form-mini-cal-field');
     if (!equipmentName) {
       wrap.style.display = 'none';
+      // 【2026/9/2追加】案内帯（リストの項目を選び直し中の表示）も、親ごと隠れて
+      // 見た目には影響しないとはいえ、状態としてきちんと消しておく。
+      document.getElementById('form-mc-target-banner').style.display = 'none';
       formCalRangeStart = null;
       formCalYear = null;
       formCalMonth = null;
@@ -2268,10 +2311,44 @@
     renderFormMiniCalendarMonth_(equipmentName);
   }
 
+  /**
+   * 【2026/9/2追加】すでに「リストに追加」済みの項目（selectedEquipmentRows[idx]）の
+   * 日付を、テキスト入力ではなく、この機材の予約状況ミニカレンダーを見ながら
+   * （＝他の予約や、まだ追加していない他の項目と重ならないことを確認しながら）
+   * 選び直せるようにする。カレンダーのタップは、フォーム上部のf-start/f-endではなく
+   * 直接その行のstartDate/endDateに書き込まれる。
+   */
+  function openMiniCalForRow_(idx) {
+    var row = selectedEquipmentRows[idx];
+    if (!row || !row.equipment) return;
+    miniCalTargetRowIndex = idx;
+    formCalRangeStart = null;
+    var base = row.startDate ? parseSlashDateParts_(row.startDate) : null;
+    var now = new Date();
+    formCalYear = base ? base.y : now.getFullYear();
+    formCalMonth = base ? base.m : now.getMonth();
+    document.getElementById('form-mini-cal-field').style.display = 'block';
+    renderFormMiniCalendarMonth_(row.equipment);
+    renderSelectedEquipmentList();
+    var wrap = document.getElementById('form-mini-cal-field');
+    if (wrap.scrollIntoView) wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // リストの項目の選び直しをやめて、フォーム上部（次に新しく追加する項目）の
+  // 選択状態に応じたカレンダー表示に戻す。
+  function exitMiniCalRowTarget_() {
+    var topEquipment = getSelectedEquipmentName_();
+    showFormMiniCalendar_(topEquipment, fromDateInputValue(document.getElementById('f-start').value));
+    renderSelectedEquipmentList();
+  }
+
   // 月をまたがず、今表示中の内容だけを今の入力状態に合わせて描き直す（開始日・
   // 終了日を手で書き換えたときなどに使う。カレンダーがまだ出ていない場合は
   // showFormMiniCalendar_で最初から開く）。
   function refreshFormMiniCalendar_() {
+    // 【2026/9/2追加】これはフォーム上部（f-start/f-end）が変わったときに呼ばれる
+    // ものなので、リストの項目を選び直し中だった場合はここで解除する。
+    miniCalTargetRowIndex = null;
     var equipmentName = document.getElementById('f-equipment').value.trim();
     var wrap = document.getElementById('form-mini-cal-field');
     if (!equipmentName) {
@@ -2295,8 +2372,29 @@
     var now = new Date();
     prevBtn.disabled = (formCalYear === now.getFullYear() && formCalMonth === now.getMonth());
 
-    var startVal = fromDateInputValue(document.getElementById('f-start').value);
-    var endVal = fromDateInputValue(document.getElementById('f-end').value);
+    // 【2026/9/2追加】miniCalTargetRowIndexが設定されている（＝すでに「リストに追加」
+    // 済みの項目を選び直し中の）場合は、フォーム上部のf-start/f-endではなく、その
+    // 項目自身（selectedEquipmentRows[idx]）の日付を対象にする。
+    var startVal, endVal;
+    if (miniCalTargetRowIndex !== null && selectedEquipmentRows[miniCalTargetRowIndex]) {
+      var targetRow_ = selectedEquipmentRows[miniCalTargetRowIndex];
+      startVal = targetRow_.startDate || '';
+      endVal = targetRow_.endDate || '';
+    } else {
+      startVal = fromDateInputValue(document.getElementById('f-start').value);
+      endVal = fromDateInputValue(document.getElementById('f-end').value);
+    }
+
+    // 【2026/9/2追加】選び直し中の対象に応じて、案内帯（form-mc-target-banner）の
+    // 表示を切りかえる。
+    var targetBanner = document.getElementById('form-mc-target-banner');
+    var targetText = document.getElementById('form-mc-target-text');
+    if (miniCalTargetRowIndex !== null && selectedEquipmentRows[miniCalTargetRowIndex]) {
+      targetBanner.style.display = 'flex';
+      targetText.textContent = '「' + selectedEquipmentRows[miniCalTargetRowIndex].equipment + '」の日付を選び直し中';
+    } else {
+      targetBanner.style.display = 'none';
+    }
 
     // 【2026/8/29追加】重複を直すために開いた編集画面では、「どの日が重複しているか」が
     // このミニカレンダーでもひと目で分かるようにしたい、との要望に対応。
@@ -2336,7 +2434,20 @@
     // 選び直した「今まさに選んでいる日付」を使うため、日付を動かせばすぐに赤い範囲も
     // 追従する。「今どこが開始日・終了日として選択中か」は、赤い塗りの上にmc-selected-ring
     // の枠線を重ねて示す（isOverlapDay/bookedのCSS優先順位側で処理している）。
-    var itemBookings = overlapCheckBookings;
+    // 【2026/9/2追加】まだ保存していない（「リストに追加」済みだが未保存の）同じ機材名の
+    // 項目も、ここで一緒に「予約あり（使用中）」として赤く表示する。これが無いと、
+    // すでにリストに入っている別の項目と重なる日を選んでも、このカレンダー上は空いて
+    // いるように見えてしまい、なぜ警告が出るのか分からず、いつまで経っても警告が
+    // 消えないように見えてしまう。今まさにこのカレンダーで選び直している項目自身
+    // （miniCalTargetRowIndexで指定している行）は、当然ここから除く。
+    var pendingSameEquipmentBookings = [];
+    selectedEquipmentRows.forEach(function (row, idx) {
+      if (row.equipment !== equipmentName) return;
+      if (miniCalTargetRowIndex !== null && idx === miniCalTargetRowIndex) return;
+      if (!row.startDate || !row.endDate) return;
+      pendingSameEquipmentBookings.push({ startDate: row.startDate, endDate: row.endDate, supplier: row.supplier || '' });
+    });
+    var itemBookings = overlapCheckBookings.concat(pendingSameEquipmentBookings);
 
     var todayStrVal = todayStr();
     var firstOfMonth = new Date(formCalYear, formCalMonth, 1);
@@ -2436,20 +2547,39 @@
    * 連動して変わる。
    */
   function handleFormMiniCalTap_(dateStr) {
+    // 【2026/9/2追加】miniCalTargetRowIndexが設定されている（＝すでに「リストに追加」
+    // 済みの項目を選び直し中の）場合は、その項目のstartDate/endDateに直接書き込む。
+    // それ以外（通常どおり）はこれまで通りフォーム上部のf-start/f-endに書き込む。
+    var targetRow = (miniCalTargetRowIndex !== null) ? selectedEquipmentRows[miniCalTargetRowIndex] : null;
     if (!formCalRangeStart || dateStr < formCalRangeStart) {
       formCalRangeStart = dateStr;
-      document.getElementById('f-start').value = toDateInputValue(dateStr);
-      document.getElementById('f-end').value = toDateInputValue(dateStr);
+      if (targetRow) {
+        targetRow.startDate = dateStr;
+        targetRow.endDate = dateStr;
+      } else {
+        document.getElementById('f-start').value = toDateInputValue(dateStr);
+        document.getElementById('f-end').value = toDateInputValue(dateStr);
+      }
     } else {
-      document.getElementById('f-end').value = toDateInputValue(dateStr);
+      if (targetRow) {
+        targetRow.endDate = dateStr;
+      } else {
+        document.getElementById('f-end').value = toDateInputValue(dateStr);
+      }
       formCalRangeStart = null;
     }
-    var equipmentName = getSelectedEquipmentName_();
+    var equipmentName = targetRow ? targetRow.equipment : getSelectedEquipmentName_();
     renderFormMiniCalendarMonth_(equipmentName);
     // 【2026/9/2追加】カレンダーで日付をタップした瞬間にも、選んでいる機材が
     // 重複していればその場ですぐ警告する（「リストに追加」を押す前でも分かる
-    // ようにするため）。
-    updateSelectedEquipmentConflictWarning_();
+    // ようにするため）。対象がリストの項目（targetRow）のときは、その項目の
+    // 日付表示自体も更新する必要があるため、renderSelectedEquipmentList()を呼ぶ
+    // （この中で重複警告のチェックも一緒に行われる）。
+    if (targetRow) {
+      renderSelectedEquipmentList();
+    } else {
+      updateSelectedEquipmentConflictWarning_();
+    }
   }
 
   // ---------- 追加・編集フォーム ----------
@@ -2634,7 +2764,9 @@
     }
     selectedEquipmentRows.forEach(function (row, idx) {
       var box = document.createElement('div');
-      box.className = 'selected-eq-row';
+      // 【2026/9/2追加】上の「この機材の予約状況」ミニカレンダーで、今まさにこの
+      // 項目の日付を選び直し中のときは、枠線を強調して分かりやすくする。
+      box.className = 'selected-eq-row' + (idx === miniCalTargetRowIndex ? ' is-cal-target' : '');
 
       // 【2026/9/1追加】プルダウンから選んだ機材名も、この下の入力欄でそのまま
       // 書きかえられることに気づきにくいという声があったため、ラベルで明示する。
@@ -2660,6 +2792,11 @@
         // 【2026/9/2追加】機材名を書きかえたことで、リスト内の重複が直った・
         // 新たに発生した、のどちらの場合もその場ですぐ警告表示に反映する。
         updateSelectedEquipmentConflictWarning_();
+        // この項目を選び直し中に機材名も書きかえた場合は、カレンダー側の対象機材名も
+        // 一緒に更新する（別の機材の予約状況を見ながらのままにならないようにする）。
+        if (idx === miniCalTargetRowIndex) {
+          renderFormMiniCalendarMonth_(nameInput.value);
+        }
       });
       var removeBtn = document.createElement('button');
       removeBtn.type = 'button';
@@ -2667,7 +2804,13 @@
       removeBtn.textContent = '✕ 削除';
       removeBtn.addEventListener('click', function () {
         selectedEquipmentRows.splice(idx, 1);
-        renderSelectedEquipmentList();
+        // 【2026/9/2追加】削除した項目をちょうどカレンダーで選び直し中だった場合は、
+        // フォーム上部（次に新しく追加する項目）の選択に戻す。
+        if (miniCalTargetRowIndex !== null) {
+          exitMiniCalRowTarget_();
+        } else {
+          renderSelectedEquipmentList();
+        }
       });
       head.appendChild(nameInput);
       head.appendChild(removeBtn);
@@ -2706,6 +2849,24 @@
       // 【2026/8/30変更】開始日・終了日を横並びにすると、実機のiPhone（Safari）で
       // <input type="date">の枠同士が詰まって見える問題があったため、こちらも
       // 縦並び（date-field-row）に変更する。
+      // 【2026/9/2追加】この項目の日付を、下のテキスト欄への直接入力だけでなく、
+      // 上の「この機材の予約状況」ミニカレンダーを見ながら（他の予約・他の未追加
+      // 項目と重ならないことを確認しながら）選び直せるようにするボタン。
+      var calBtn = document.createElement('button');
+      calBtn.type = 'button';
+      calBtn.className = 'selected-eq-cal-btn' + (idx === miniCalTargetRowIndex ? ' is-active' : '');
+      calBtn.textContent = (idx === miniCalTargetRowIndex)
+        ? '📅 上のカレンダーで選択中（タップで更新）'
+        : '📅 使用状況を見ながら日付を選び直す';
+      calBtn.addEventListener('click', function () {
+        if (!row.equipment || !row.equipment.trim()) {
+          showEquipmentAddError('先に機材名を入力してください。');
+          return;
+        }
+        openMiniCalForRow_(idx);
+      });
+      box.appendChild(calBtn);
+
       var dateRow = document.createElement('div');
       dateRow.className = 'field-row date-field-row';
 
@@ -2721,6 +2882,10 @@
         // 【2026/9/2追加】日付を直したことで重複が直った・新たに発生した、の
         // どちらの場合もその場ですぐ警告表示に反映する。
         updateSelectedEquipmentConflictWarning_();
+        // この項目を選び直し中であれば、カレンダー側の表示もこの手入力に追従させる。
+        if (idx === miniCalTargetRowIndex) {
+          renderFormMiniCalendarMonth_(selectedEquipmentRows[idx].equipment);
+        }
       });
       startField.appendChild(startLabel);
       startField.appendChild(startInput);
@@ -2737,6 +2902,10 @@
         // 【2026/9/2追加】日付を直したことで重複が直った・新たに発生した、の
         // どちらの場合もその場ですぐ警告表示に反映する。
         updateSelectedEquipmentConflictWarning_();
+        // この項目を選び直し中であれば、カレンダー側の表示もこの手入力に追従させる。
+        if (idx === miniCalTargetRowIndex) {
+          renderFormMiniCalendarMonth_(selectedEquipmentRows[idx].equipment);
+        }
       });
       endField.appendChild(endLabel);
       endField.appendChild(endInput);
@@ -3822,6 +3991,9 @@
   document.getElementById('f-equipment-custom').addEventListener('input', updateSelectedEquipmentConflictWarning_);
   document.getElementById('f-start').addEventListener('change', updateSelectedEquipmentConflictWarning_);
   document.getElementById('f-end').addEventListener('change', updateSelectedEquipmentConflictWarning_);
+  // 【2026/9/2追加】「この機材の予約状況」ミニカレンダーで、リストの項目を選び直し
+  // 中のときに出す「✕ やめる」ボタン。
+  document.getElementById('form-mc-target-exit-btn').addEventListener('click', exitMiniCalRowTarget_);
   document.getElementById('f-project').addEventListener('change', function () {
     updateProjectCustomInputVisibility();
     if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
