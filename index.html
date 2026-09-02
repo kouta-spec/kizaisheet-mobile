@@ -130,6 +130,14 @@
   }
   header button.icon-btn:hover { transform: scale(1.08); }
   header button.icon-btn:active { transform: scale(0.92); }
+  /* 【2026/9/2追加】更新ボタン（🔄）と設定ボタン（⚙️）を右側にまとめて並べるための
+     入れ物。中の各ボタンには既に上のheader button.icon-btnでgrid-column:3・
+     justify-self:endが付くが、この入れ物自体がflexコンテナなのでボタン側では
+     効かなくなり、実際の並び順・配置はこの入れ物の設定に従う（無害な重複指定）。 */
+  .header-actions-right {
+    grid-column: 3; justify-self: end;
+    display: flex; align-items: center; gap: 6px;
+  }
   /* 【2026/8/29追加】重複警告の確認ボタン。ヘッダー右の設定ボタン（column3）とは
      反対の左側（column1、今まで空いていた場所）に置くことで、両方が重ならないようにする。
      重複がある間だけ表示し、機材名の件数をひと目で分かるようにテキスト付きの
@@ -568,7 +576,14 @@
          重複が残っている間ずっと表示され続けるボタンをヘッダーに用意し、
          いつでもタップして重複中の機材を確認できるようにする。 -->
     <button class="icon-btn overlap-indicator-btn" id="overlap-indicator-btn" style="display:none;" title="重複の可能性がある機材を確認">⚠️</button>
-    <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
+    <!-- 【2026/9/2追加】パソコン側で機材シートを直接編集した内容は、アプリを
+         立ち上げ直さないと反映されない、との指摘に対応。タップすると、機材一覧・
+         カテゴリ・発注先一覧・作品名一覧・予約一覧をまとめて最新の内容に取り直す
+         （refreshAllData、既存の起動時読み込みと同じ処理を再利用）。 -->
+    <div class="header-actions-right">
+      <button class="icon-btn" id="refresh-data-btn" title="最新のデータに更新">🔄</button>
+      <button class="icon-btn" id="settings-btn" title="設定">⚙️</button>
+    </div>
   </header>
 
   <div class="tabs" id="view-tabs">
@@ -784,7 +799,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-02a';
+  var APP_BUILD_VERSION = '2026-09-02b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -3285,8 +3300,13 @@
   // 作品名一覧・予約一覧を5回の別々の通信で取得していたが、GAS側に新設した
   // initData（1回でまとめて返す）action を使うことで通信回数を1回に減らし、
   // 起動直後の待ち時間を短縮した。
+  // 【2026/9/2追加】「更新」ボタンから呼ぶときはsilent=falseにして、ローディング表示と
+  // 完了メッセージを出す（起動時の裏取得や自動再取得ではsilent=trueのまま、今まで通り
+  // 何も表示しない）。
   function refreshAllData(silent) {
+    if (!silent) showLoading('最新のデータを取得中...');
     return apiGet('initData', { sinceDays: 400 }).then(function (res) {
+      if (!silent) hideLoading();
       if (!res.ok) {
         markProjectListLoadFailed_();
         if (!silent) showBanner('データの取得に失敗しました: ' + res.error, 'error');
@@ -3314,8 +3334,15 @@
       // 出てこない）。フォームが開いている間にデータが届いたら、その場で
       // プルダウンの選択肢を作り直すようにした。
       refreshOpenFormSelects_();
+      if (!silent) {
+        showBanner('最新の内容に更新しました。', 'info');
+        scheduleBannerAutoHide_(3000);
+      }
     }).catch(function (err) {
-      if (!silent) showBanner('通信エラー: ' + err.message, 'error');
+      if (!silent) {
+        hideLoading();
+        showBanner('通信エラー: ' + err.message, 'error');
+      }
     });
   }
 
@@ -3331,6 +3358,23 @@
   // 【2026/8/29追加】ヘッダーの「⚠️ 重複◯件」ボタン。タップすると、他の通知に
   // 上書きされて消えてしまっていても、いつでも重複中の機材一覧をバナーに出し直せる。
   document.getElementById('overlap-indicator-btn').addEventListener('click', renderPersistentOverlapBanner_);
+  // 【2026/9/2追加】ヘッダーの「🔄」更新ボタン。パソコン側で機材シートを直接編集した
+  // 内容を、アプリを立ち上げ直さずに取り込みたい、との要望に対応。
+  document.getElementById('refresh-data-btn').addEventListener('click', function () {
+    if (!hasSettings()) return;
+    refreshAllData(false);
+  });
+  // 【2026/9/2追加】ボタンを押さなくても、スマホの他のアプリに切り替えてからこの
+  // アプリに戻ってきたとき（バックグラウンド→フォアグラウンド）に、自動で裏側から
+  // 静かに最新データを取り直す。よくある「他のアプリを見ていた／画面をロックして
+  // いた間にパソコン側で誰かが編集した」というケースを、更新ボタンを押し忘れても
+  // 拾えるようにするための保険。dataLoaded.bookingsがまだfalse（起動直後の
+  // 初回読み込みが終わっていない）ときは、初回読み込みと二重に走らないよう何もしない。
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    if (!hasSettings() || !dataLoaded.bookings) return;
+    refreshAllData(true);
+  });
   document.getElementById('settings-cancel').addEventListener('click', closeSettings);
   document.getElementById('settings-save').addEventListener('click', saveSettingsAndConnect);
   document.getElementById('settings-disconnect').addEventListener('click', disconnectSettings);
