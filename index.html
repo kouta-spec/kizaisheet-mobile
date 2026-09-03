@@ -517,6 +517,15 @@
      箱の形にしつつ、赤（エラー色）ではなく緑にして、失敗ではないことが一目で分かるようにする。 */
   .form-info { color: #0b8f61; font-size: 13px; margin-top: -6px; margin-bottom: 10px; display: none; font-weight: 600; }
   .form-info.show { display: block; }
+  /* 【2026/9/3追加】作品名アクセス制限（フリーランス等）が設定されている人が、
+     自分の担当外の作品の予約を開いたときに出す「閲覧のみ」の案内。 */
+  .readonly-notice {
+    display: none; align-items: center; gap: 8px;
+    margin: -2px 0 14px; padding: 10px 12px; border-radius: 10px;
+    background: #fff2da; color: #a15c00; font-size: 12.5px; font-weight: 700;
+    border: 1px solid #f0d9ab;
+  }
+  .readonly-notice.show { display: flex; }
   .btn-delete {
     width: 100%; margin-top: 10px; padding: 12px; border-radius: 999px; border: 1.5px solid var(--red);
     background: white; color: var(--red); font-size: 14px; font-weight: 700; cursor: pointer;
@@ -735,6 +744,10 @@
       <button type="button" class="sheet-back-btn" id="form-back">← 戻る</button>
       <h2 id="form-title">予約を追加</h2>
     </div>
+    <!-- 【2026/9/3追加】作品名アクセス制限（フリーランス等）が設定されている人が、
+         自分の担当外の作品の予約を開いたときに表示する案内。このときは各入力欄が
+         disabledになり、保存・削除ボタンも隠れる（閲覧のみ）。 -->
+    <div class="readonly-notice" id="form-readonly-notice">🔒 この作品はあなたの編集対象外です。内容の確認のみできます。</div>
     <div class="field">
       <label>作品名（機材リストに登録済みの作品名と完全一致させるため選択式）</label>
       <select id="f-project"><option value="">（作品名を読み込み中...）</option></select>
@@ -914,7 +927,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-03b';
+  var APP_BUILD_VERSION = '2026-09-03c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -938,6 +951,14 @@
   var supplierList = []; // 発注先の候補（機材リストF列のプルダウンに設定されているレンタル会社名）
   var projectList = []; // 作品名の候補（機材リストに既に登録されている作品名。新規入力も可）
   var PROJECT_CUSTOM_VALUE = '__custom_project__';
+  // 【2026/9/3追加】作品名アクセス制限（フリーランス等、特定の作品にしかアクセス
+  // させたくない人向け）。null＝制限なし（これまで通り全作品を編集できる、通常の
+  // 社員）。配列＝この作品名だけ追加・編集・削除できる（それ以外の作品も閲覧は
+  // できるが、編集フォームは閲覧のみになる）。サーバー側（MobileApi.gsの
+  // initDataのpermissions）から届いた内容をそのまま保持する。実際のアクセス制御は
+  // サーバー側の各保存処理でも必ず行っているので、ここでの制御はあくまで使い勝手
+  // （保存ボタンを押してからエラーになるより、開いた時点で分かったほうが良い）のため。
+  var mobileAllowedProjects = null;
   // 【2026/8/29追加】機材名も作品名と同じく、マスターガントチャートの一覧に無い
   // 機材（外部レンタル品など）を自由入力で追加できるようにするための特殊値。
   var EQUIPMENT_CUSTOM_VALUE = '__custom_equipment__';
@@ -2152,6 +2173,16 @@
     } catch (e) { /* 無視 */ }
   }
 
+  // 【2026/9/3追加】作品名アクセス制限（フリーランス等）の情報を、前回起動時の
+  // キャッシュから先に読み込んでおく（通信が終わる前に予約フォームを開いても、
+  // 制限が反映された状態で表示できるようにするため）。
+  function loadCachedPermissions() {
+    try {
+      var raw = localStorage.getItem('kizai_mobile_permissions_cache_v1');
+      if (raw) { mobileAllowedProjects = JSON.parse(raw); }
+    } catch (e) { /* 無視 */ }
+  }
+
   function populateProjectSelect(selectedValue) {
     var sel = document.getElementById('f-project');
     var current = selectedValue !== undefined ? selectedValue : sel.value;
@@ -2160,7 +2191,12 @@
     placeholder.value = '';
     placeholder.textContent = '（作品名を選択）';
     sel.appendChild(placeholder);
-    projectList.forEach(function (name) {
+    // 【2026/9/3追加】作品名アクセス制限（フリーランス等）がある場合は、選択肢を
+    // 許可された作品名だけに絞る。誤って別の作品名で保存しようとすることを防ぐ
+    // ため、「＋新しい作品名を入力」も出さない（新しい作品名を自由に作れてしまうと、
+    // 制限の意味が無くなるため）。
+    var namesToShow = mobileAllowedProjects ? mobileAllowedProjects : projectList;
+    namesToShow.forEach(function (name) {
       var opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
@@ -2168,16 +2204,18 @@
     });
     // 現在の値が一覧に無い（まだ機材リストに載っていない新しい作品名を編集で開いた
     // 場合など）場合も、選び直させて消してしまわないよう、そのまま選べる選択肢として残す。
-    if (current && current !== PROJECT_CUSTOM_VALUE && projectList.indexOf(current) === -1) {
+    if (current && current !== PROJECT_CUSTOM_VALUE && namesToShow.indexOf(current) === -1) {
       var extra = document.createElement('option');
       extra.value = current;
       extra.textContent = current;
       sel.appendChild(extra);
     }
-    var customOpt = document.createElement('option');
-    customOpt.value = PROJECT_CUSTOM_VALUE;
-    customOpt.textContent = '＋新しい作品名を入力...';
-    sel.appendChild(customOpt);
+    if (!mobileAllowedProjects) {
+      var customOpt = document.createElement('option');
+      customOpt.value = PROJECT_CUSTOM_VALUE;
+      customOpt.textContent = '＋新しい作品名を入力...';
+      sel.appendChild(customOpt);
+    }
     sel.value = (current === PROJECT_CUSTOM_VALUE) ? PROJECT_CUSTOM_VALUE : (current || '');
     updateProjectCustomInputVisibility();
   }
@@ -2329,6 +2367,13 @@
       if (equipmentByCategory[cat].indexOf(name) !== -1) return cat;
     }
     return '';
+  }
+
+  // 【2026/9/3追加】この端末（トークン）で、指定した作品名の予約を追加・編集・削除
+  // してよいかどうか。mobileAllowedProjectsがnull（制限なし）の人は常にtrue。
+  function canEditProject_(projectName) {
+    if (!mobileAllowedProjects) return true;
+    return mobileAllowedProjects.indexOf((projectName || '').trim()) !== -1;
   }
 
   // ---------- 予約フォーム内のミニカレンダー（機材の予約状況＋タップで期間選択） ----------
@@ -2645,14 +2690,44 @@
   }
 
   // ---------- 追加・編集フォーム ----------
+  // 【2026/9/3追加】作品名アクセス制限（フリーランス等）に応じて、予約フォームを
+  // 「編集できる」状態と「閲覧のみ（入力欄disabled・保存/削除ボタン非表示）」状態
+  // どちらにするかを切りかえる。bookingにnullを渡すと（＝新規追加フォームを開く
+  // ときなど）、常に「編集できる」状態にする（新規追加は必ずcanEditProject_で絞った
+  // 作品名の中からしか選べないため、フォーム自体を閲覧のみにする必要はない）。
+  // 実際のアクセス制御はサーバー側（MobileApi.gs）でも必ず行っているので、これは
+  // あくまで使い勝手のため（保存ボタンを押してからエラーになるより、開いた時点で
+  // 分かったほうが良い）。
+  var EDIT_FORM_LOCK_FIELD_IDS = ['f-project', 'f-project-custom', 'f-category', 'f-equipment',
+    'f-equipment-custom', 'f-quantity', 'f-supplier', 'f-start', 'f-end', 'f-note'];
+  function applyEditFormAccessState_(booking) {
+    var readOnly = !!booking && !canEditProject_(booking.project);
+    EDIT_FORM_LOCK_FIELD_IDS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = readOnly;
+    });
+    document.getElementById('form-save').style.display = readOnly ? 'none' : '';
+    if (readOnly) {
+      document.getElementById('form-delete').style.display = 'none';
+      document.getElementById('f-equipment-rename-btn').style.display = 'none';
+      document.getElementById('edit-mini-cal-btn').style.display = 'none';
+      document.getElementById('form-mini-cal-field').style.display = 'none';
+    }
+    document.getElementById('form-readonly-notice').classList.toggle('show', readOnly);
+  }
+
   function openAddForm() {
     editingRow = null;
+    applyEditFormAccessState_(null);
     document.getElementById('form-title').textContent = '予約を追加';
     document.getElementById('f-category').value = '';
     document.getElementById('f-start').value = '';
     document.getElementById('f-end').value = '';
     document.getElementById('f-note').value = '';
-    populateProjectSelect('');
+    // 【2026/9/3追加】作品名アクセス制限があり、許可された作品がちょうど1件だけの
+    // 場合は、あらかじめその作品名を選んだ状態にしておく（選択肢もその1件だけに
+    // 絞られているため、毎回選び直す手間を省く）。
+    populateProjectSelect((mobileAllowedProjects && mobileAllowedProjects.length === 1) ? mobileAllowedProjects[0] : '');
     populateEquipmentSelect('', '');
     // 新規追加は「カテゴリ→機材名を選ぶ→リストに追加」を繰り返す複数選択式にする。
     document.getElementById('single-equipment-fields').style.display = 'none';
@@ -2737,6 +2812,9 @@
     miniCalTargetRowIndex = null;
     document.getElementById('edit-mini-cal-btn').style.display = b.equipment ? 'block' : 'none';
     hideFormError();
+    // 【2026/9/3追加】上のedit-mini-cal-btn表示等より後に呼ぶことで、作品名アクセス
+    // 制限の対象外（閲覧のみ）の場合はこの中で確実に上書きして隠す。
+    applyEditFormAccessState_(b);
     document.getElementById('form-overlay').classList.add('show');
   }
 
@@ -3739,6 +3817,7 @@
       try { localStorage.removeItem('kizai_category_cache_v1'); } catch (e) { /* 無視 */ }
       try { localStorage.removeItem('kizai_mobile_supplier_cache_v1'); } catch (e) { /* 無視 */ }
       try { localStorage.removeItem('kizai_mobile_project_cache_v1'); } catch (e) { /* 無視 */ }
+      try { localStorage.removeItem('kizai_mobile_permissions_cache_v1'); } catch (e) { /* 無視 */ }
 
       settings = { url: '', token: '' };
       bookings = [];
@@ -3747,6 +3826,7 @@
       categoryOrder = [];
       supplierList = [];
       projectList = [];
+      mobileAllowedProjects = null;
       dataLoaded = { equipment: false, bookings: false };
 
       document.getElementById('settings-url').value = '';
@@ -3912,6 +3992,9 @@
     loadCachedEquipmentList();
     loadCachedEquipmentCategories();
     loadCachedSupplierList();
+    // 【2026/9/3追加】作品名アクセス制限は、作品名の選択肢を絞り込むloadCachedProjectList
+    // より前に読み込んでおく。
+    loadCachedPermissions();
     loadCachedProjectList();
     loadCachedBookings();
     refreshAllData(true);
@@ -3938,6 +4021,10 @@
       setEquipmentCategories(res.categories || []);
       supplierList = res.suppliers || [];
       projectList = res.projects || [];
+      // 【2026/9/3追加】作品名アクセス制限（フリーランス等）の情報を反映する。
+      // populateProjectSelect()より先に設定しておくことで、選択肢を絞り込める。
+      mobileAllowedProjects = (res.permissions && Array.isArray(res.permissions.allowedProjects))
+        ? res.permissions.allowedProjects : null;
       populateProjectSelect();
       bookings = res.bookings || [];
       dataLoaded.bookings = true;
@@ -3947,6 +4034,7 @@
         localStorage.setItem('kizai_mobile_supplier_cache_v1', JSON.stringify(supplierList));
         localStorage.setItem('kizai_mobile_project_cache_v1', JSON.stringify(projectList));
         localStorage.setItem('kizai_mobile_bookings_cache_v1', JSON.stringify(bookings));
+        localStorage.setItem('kizai_mobile_permissions_cache_v1', JSON.stringify(mobileAllowedProjects));
       } catch (e) { /* 保存容量オーバー等は無視 */ }
       renderCurrentView();
       // 【2026/8/27修正】以前は、予約追加フォームをデータ到着より先に開いていた場合、
