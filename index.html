@@ -903,7 +903,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-02h';
+  var APP_BUILD_VERSION = '2026-09-03a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -3019,9 +3019,19 @@
     // 機材シートにすでに保存されている予約（自社在庫、発注先なし）との重複も
     // 同じように警告する。発注先ありの予約は、他の重複チェックと同じく対象外
     // にする（レンタル品は同じ名前でも複数を同時に借りることがあるため）。
+    // 【2026/9/3追加・不具合修正】ここでも同じ「日付が空欄だとdateRangesOverlap_が
+    // 安全側でtrueを返す」問題があった。今回はローカルのリストではなく、機材シート
+    // 側にすでにある予約（bookings）の中に、開始日・終了日のどちらかが空欄・不正な
+    // 行が1件でもあると、その機材名を選ぶたびに常に重複扱いになってしまっていた
+    // （「ARRI AMIRA (No.2)」で、他の機材では起きないのに常に警告が出ていた原因）。
+    // 機材使用状況カレンダーの色分け（booked/rentalBooked）は文字列の日付比較のみで
+    // dateRangesOverlap_を使っていないため、この問題の影響を受けず正しく表示されて
+    // いたが、警告側だけこの不具合を持っていた。既存予約についても、開始日・終了日
+    // が両方そろっている行だけを比較対象にする。
+    var validBookings = bookings.filter(function (b) { return b.startDate && b.endDate; });
     rows.forEach(function (r) {
       if (!r.equipment || seen[r.equipment]) return;
-      var conflictsWithExisting = bookings.some(function (b) {
+      var conflictsWithExisting = validBookings.some(function (b) {
         return !b.supplier && b.equipment === r.equipment &&
           dateRangesOverlap_(b.startDate, b.endDate, r.startDate, r.endDate);
       });
