@@ -903,7 +903,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-02g';
+  var APP_BUILD_VERSION = '2026-09-02h';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2710,10 +2710,20 @@
     // ブロックしていた。機材使用状況のカレンダーから日付をタップして開いた場合など、
     // 同じ機材を「期間が重ならない別日程」でもう1件追加したいケースまで塞いでしまって
     // いたため、実際に期間が重なっている場合だけブロックするようにした。
-    var conflictRow = selectedEquipmentRows.find(function (row) {
+    // 【2026/9/2追加・不具合修正】「リストに追加」は開始日・終了日を入力しなくても
+    // できてしまうため、日付未入力（空欄）の項目がリストに混ざることがある。
+    // dateRangesOverlap_は日付が解釈できないとき安全側として「重なっている」扱い
+    // （true）を返すため、これから追加しようとしている項目・比較対象のリスト項目の
+    // どちらかでも日付が空欄だと、実際には重複していなくても常にブロックされてしまう
+    // 不具合があった（例:「ARRI AMIRA (No.2)」を日付未入力のままリストに追加した
+    // あと、同じ機材名を空いている日で追加しようとしても常に弾かれてしまう）。
+    // これから追加する項目・比較対象の項目の両方に開始日・終了日が揃っている場合
+    // だけ、実際の重複判定を行うようにする。
+    var conflictRow = (defaultStart && defaultEnd) ? selectedEquipmentRows.find(function (row) {
       if (row.equipment !== equipment) return false;
+      if (!row.startDate || !row.endDate) return false;
       return dateRangesOverlap_(row.startDate, row.endDate, defaultStart, defaultEnd);
-    });
+    }) : null;
     if (conflictRow) {
       showEquipmentAddError('「' + equipment + '」はすでに同じ期間でリストに追加されています。');
       return;
@@ -2975,7 +2985,16 @@
     var multiVisible = document.getElementById('multi-equipment-fields').style.display !== 'none';
     if (!multiVisible) { hideEquipmentAddError(); return; }
 
-    var rows = selectedEquipmentRows.slice();
+    // 【2026/9/2追加・不具合修正】「リストに追加」は開始日・終了日を入力しなくても
+    // できてしまうため、日付が未入力（空欄）のままの項目がリストに混ざることがある。
+    // dateRangesOverlap_は日付が解釈できないとき「安全側」として重なっている扱い
+    // （true）を返す仕組みになっているため、これをそのまま使うと、日付未入力の
+    // 項目が同じ機材名の他の項目・既存予約すべてと「常に重複している」と誤判定
+    // されてしまい、実際には空いている日を選んでも警告が消えない不具合になっていた
+    // （例: 「ARRI AMIRA (No.2)」を日付未入力のままリストに追加してしまったあと、
+    // 同じ機材名を選ぶたびに常に警告が出てしまう）。開始日・終了日がどちらも
+    // 入っている項目だけを比較対象にすることで、この誤判定を防ぐ。
+    var rows = selectedEquipmentRows.filter(function (r) { return r.startDate && r.endDate; });
     // フォーム上部で選択中（まだ「リストに追加」を押していない）の機材・期間を、
     // 仮の1件としてrowsに加えておくと、下のチェックがそのまま流用できる。
     var pendingEquipment = getSelectedEquipmentName_();
