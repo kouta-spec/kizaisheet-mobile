@@ -276,6 +276,17 @@
   .group-header:first-child { margin-top: 0; }
   .group-header .chevron { color: var(--blue-dark); font-size: 14px; font-weight: 700; }
 
+  /* 【2026/9/3追加】作品詳細シート内で、機材をカテゴリごとに分けて表示するための
+     小見出し。group-headerと違い、タップでは何も起きない（ただの区切りラベル）ので、
+     カーソルやホバー演出は付けず、控えめな見た目にする。 */
+  .category-subheader {
+    font-size: 12px; font-weight: 800; color: var(--sub);
+    margin: 16px 4px 6px; padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.02em;
+  }
+  .category-subheader:first-child { margin-top: 2px; }
+
   .mini-cal { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
   .mini-cal-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
   .mini-cal-nav button {
@@ -903,7 +914,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-03a';
+  var APP_BUILD_VERSION = '2026-09-03b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1449,19 +1460,56 @@
 
     var listEl = document.getElementById('project-detail-list');
     listEl.innerHTML = '';
-    items.forEach(function (b, index) {
-      var card = buildBookingCard(b, function (bk) {
-        // 【2026/8/27追加】編集フォームの「戻る」で、この作品詳細シートへ戻れるように
-        // しておく（最新データで作り直すので、編集後の内容も反映された状態で戻る）。
-        formReturnAction = function () { reopenProjectDetailByName_(projectName); };
-        hideProjectDetailOverlay_();
-        openEditForm(bk);
+    // 【2026/9/3追加】機材名をカテゴリ（マスターガントチャートのカテゴリ分け）ごとに
+    // 見出しで区切って表示する。カテゴリ内の並び順はこれまで通り変更しない
+    // （機材リストシートでの行の並び順のまま）。
+    var grouping = groupItemsByCategory_(items);
+    var cardIndex = 0;
+    grouping.groupOrder.forEach(function (cat) {
+      var group = grouping.grouped[cat];
+      if (cat) {
+        var sub = document.createElement('div');
+        sub.className = 'category-subheader';
+        sub.textContent = cat + '（' + group.length + '件）';
+        listEl.appendChild(sub);
+      }
+      group.forEach(function (b) {
+        var card = buildBookingCard(b, function (bk) {
+          // 【2026/8/27追加】編集フォームの「戻る」で、この作品詳細シートへ戻れるように
+          // しておく（最新データで作り直すので、編集後の内容も反映された状態で戻る）。
+          formReturnAction = function () { reopenProjectDetailByName_(projectName); };
+          hideProjectDetailOverlay_();
+          openEditForm(bk);
+        });
+        card.style.animationDelay = (cardIndex * 40) + 'ms';
+        cardIndex++;
+        listEl.appendChild(card);
       });
-      card.style.animationDelay = (index * 40) + 'ms';
-      listEl.appendChild(card);
     });
 
     document.getElementById('project-detail-overlay').classList.add('show');
+  }
+
+  // 【2026/9/3追加】予約の配列を、機材名の属するカテゴリ（マスターガントチャートの
+  // カテゴリ分け）ごとにグループ化する。作品詳細シートで、機材名をカテゴリ別に
+  // 見出しで区切って表示するために使う。カテゴリ情報がまだ読み込めていない場合は、
+  // 見出し無しの1グループ（従来通りのフラットな一覧）にする。マスターの一覧に無い
+  // 機材名（自由入力で追加されたもの）は、機材使用状況タブと同じ「自由入力の機材
+  // （一覧未登録）」グループにまとめる。見出しの並び順はマスターのカテゴリ順
+  // （categoryOrder）に揃え、その中に無いもの（自由入力グループ）は最後に出す。
+  function groupItemsByCategory_(items) {
+    if (categoryOrder.length === 0) {
+      return { groupOrder: [''], grouped: { '': items } };
+    }
+    var grouped = {};
+    items.forEach(function (b) {
+      var cat = findCategoryForEquipment(b.equipment) || FREE_EQUIPMENT_GROUP_NAME;
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(b);
+    });
+    var groupOrder = categoryOrder.filter(function (c) { return grouped[c]; });
+    if (grouped[FREE_EQUIPMENT_GROUP_NAME]) groupOrder.push(FREE_EQUIPMENT_GROUP_NAME);
+    return { groupOrder: groupOrder, grouped: grouped };
   }
   // 見た目を隠すだけの処理（戻る先には進まない）。このシートの上に予約フォームを
   // 重ねて開くとき（＝一つ先の画面へ進むとき）に使う。ここでprojectDetailReturnActionを
