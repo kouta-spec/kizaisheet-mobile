@@ -927,7 +927,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-03c';
+  var APP_BUILD_VERSION = '2026-09-03d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -3126,7 +3126,20 @@
     var pendingEquipment = getSelectedEquipmentName_();
     var pendingStart = fromDateInputValue(document.getElementById('f-start').value);
     var pendingEnd = fromDateInputValue(document.getElementById('f-end').value);
-    if (pendingEquipment && pendingStart && pendingEnd) {
+    // 【2026/9/3追加・不具合修正】機材使用状況カレンダーで空いている日をタップして
+    // 予約を追加しようとすると（openAddFormForDate）、タップした機材・日付は
+    // selectedEquipmentRowsに1件追加されると同時に、フォーム上部のf-equipment・
+    // f-start・f-endにも同じ内容がそのまま反映される。そのため、この「仮の1件」を
+    // 無条件でrowsに足してしまうと、たった今追加されたばかりの同じ予約1件が
+    // rows内に2件（元の行＋仮の行）並ぶことになり、「自分自身」と重複していると
+    // 誤判定してしまっていた（例:「GoPro HERO7 (No.1)」の空いている日をタップした
+    // 瞬間、日付を何も選んでいないのに重複警告が出る不具合）。
+    // 仮の1件が、すでにリストにある行と機材名・開始日・終了日のすべてが完全に
+    // 一致する場合は、同じ予約を二重に数えているだけなので追加しない。
+    var pendingMatchesExistingRow = rows.some(function (r) {
+      return r.equipment === pendingEquipment && r.startDate === pendingStart && r.endDate === pendingEnd;
+    });
+    if (pendingEquipment && pendingStart && pendingEnd && !pendingMatchesExistingRow) {
       rows = rows.concat([{ equipment: pendingEquipment, startDate: pendingStart, endDate: pendingEnd }]);
     }
 
