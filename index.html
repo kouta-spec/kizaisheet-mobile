@@ -936,7 +936,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-04c';
+  var APP_BUILD_VERSION = '2026-09-04d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1581,6 +1581,15 @@
   // 残ったまま次の中身が表示され、しばらく空白を見つめることになる不具合を防ぐ。
   function resetProjectDetailScroll_() {
     var sheetEl = document.querySelector('#project-detail-overlay .sheet');
+    if (sheetEl) sheetEl.scrollTop = 0;
+  }
+  // 【2026/9/4追加】予約の追加・編集フォーム（#form-overlay、内部でスクロールする）も、
+  // 作品詳細シートと同じく「前に開いていたときのスクロール位置」が残ったまま次の
+  // 中身が表示されてしまっていた（例: 前の編集で下の方までスクロールした状態で
+  // 保存・閉じたあと、次に「＋新しい予約を追加」を開くと、一番上の「作品名」欄が
+  // 隠れたまま下の方から表示される）。開くたびに必ず先頭へ戻す。
+  function resetFormScroll_() {
+    var sheetEl = document.querySelector('#form-overlay .sheet');
     if (sheetEl) sheetEl.scrollTop = 0;
   }
   function closeProjectDetail() {
@@ -2859,6 +2868,7 @@
   }
 
   function openAddForm() {
+    resetFormScroll_();
     editingRow = null;
     applyEditFormAccessState_(null);
     document.getElementById('form-title').textContent = '予約を追加';
@@ -2910,6 +2920,7 @@
   }
 
   function openEditForm(b) {
+    resetFormScroll_();
     editingRow = b.row;
     // 【2026/8/30追加】修正する前の内容をここで控えておく（「一つ前に戻す」用）。
     editOriginalSnapshot = {
