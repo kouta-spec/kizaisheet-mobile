@@ -870,6 +870,10 @@
     <div class="hint" id="project-detail-summary"></div>
     <div id="project-detail-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     <div class="sheet-actions">
+      <!-- 【2026/9/4追加】作品詳細（機材一覧）のPDF出力。日をまたいだ重複選択シート
+           （dayPicker）と兼用しているオーバーレイなので、作品詳細のときだけ
+           JS側でこのボタンを表示する（openProjectDetailPdfBtnVisibility_参照）。 -->
+      <button class="btn secondary" id="project-detail-pdf-btn" type="button" hidden>PDF出力</button>
       <button class="btn secondary" id="project-detail-close">閉じる</button>
     </div>
   </div>
@@ -927,7 +931,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-03d';
+  var APP_BUILD_VERSION = '2026-09-04b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1006,7 +1010,7 @@
   // 開いたままになっているか」を覚えておく必要がある。「元に戻す」が成功した
   // 直後に、開いたままのシートがあればここから最新のbookingsで作り直す
   // （refreshOpenDetailSheetsIfAny_）。
-  var openProjectSheetState = null; // null、または {kind:'project', projectName} か {kind:'dayPicker', equipmentName, dateStr, reopenDetail}
+  var openProjectSheetState = null; // null、または {kind:'project', projectName, items} か {kind:'dayPicker', equipmentName, dateStr, reopenDetail}
   var openEquipmentDetailCategory = null; // null（未オープン）、またはカテゴリ名
 
   // ---------- 設定の読み書き ----------
@@ -1454,7 +1458,10 @@
 
   // ---------- 作品の詳細シート ----------
   function openProjectDetail(projectName, items) {
-    openProjectSheetState = { kind: 'project', projectName: projectName };
+    openProjectSheetState = { kind: 'project', projectName: projectName, items: items };
+    // 【2026/9/4追加】このオーバーレイは「作品詳細」と「重複日の予約選択」で
+    // 共用しているため、PDF出力ボタンは作品詳細のときだけ表示する。
+    setProjectDetailPdfButtonVisible_(true);
     document.getElementById('project-detail-title').textContent = projectName;
     // 【2026/8/27追加】このシートは開くたびに中身を作り直しているだけで、スクロール
     // 位置は前回開いたとき（別の作品を見ていたときなど）のまま残ってしまっていた。
@@ -1565,6 +1572,99 @@
     openProjectDetail(projectName, items);
   }
 
+  // 【2026/9/4追加】作品詳細シート下部のPDF出力ボタンの表示・非表示を切り替える。
+  // 作品詳細（kind:'project'）のときだけ表示し、重複日の予約選択（kind:'dayPicker'）
+  // のときは隠す（同じオーバーレイを2つの用途で使い回しているため）。
+  function setProjectDetailPdfButtonVisible_(visible) {
+    var btn = document.getElementById('project-detail-pdf-btn');
+    if (btn) btn.hidden = !visible;
+  }
+
+  // 【2026/9/4追加】作品詳細シートに表示している機材一覧を、印刷（スマホでは
+  // 「PDFとして保存」）できる形で出力する。金額は含めない（社外共有を想定）。
+  // jsPDF等のライブラリは日本語フォントの同梱が重く壊れやすいため使わず、
+  // ブラウザ標準の印刷機能（window.print）に日本語をそのまま描画させる方式にした。
+  // 別ウィンドウ（window.open）はホーム画面に追加したPWA（スタンドアロン表示）だと
+  // ブロックされたり挙動が不安定なことがあるため、非表示のiframeに出力用の
+  // HTMLを書き込み、そのiframeに対してprint()を呼ぶ方式にしている。
+  function exportProjectEquipmentPdf_(projectName, items) {
+    if (!items || items.length === 0) {
+      showBanner('出力する機材がありません', 'error');
+      return;
+    }
+
+    var grouping = groupItemsByCategory_(items);
+    var rowsHtml = '';
+    grouping.groupOrder.forEach(function (cat) {
+      var group = grouping.grouped[cat];
+      if (cat) {
+        rowsHtml += '<tr class="cat-row"><td colspan="5">' + escapeHtml(cat) + '（' + group.length + '件）</td></tr>';
+      }
+      group.forEach(function (b) {
+        var period = (b.startDate || '') + (b.startDate || b.endDate ? '〜' : '') + (b.endDate || '');
+        rowsHtml +=
+          '<tr>' +
+            '<td>' + escapeHtml(b.equipment || '') + '</td>' +
+            '<td>' + escapeHtml(b.quantity ? String(b.quantity) : '') + '</td>' +
+            '<td>' + escapeHtml(period) + '</td>' +
+            '<td>' + escapeHtml(b.supplier || '') + '</td>' +
+            '<td>' + escapeHtml(b.note || '') + '</td>' +
+          '</tr>';
+      });
+    });
+
+    var now = new Date();
+    var printedAt = formatDateStr(now) + ' ' +
+      String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+    var html =
+      '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<title>' + escapeHtml(projectName) + ' 機材一覧</title>' +
+      '<style>' +
+        'body{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; padding:24px; color:#222;}' +
+        'h1{font-size:20px; margin:0 0 4px;}' +
+        '.meta{font-size:12px; color:#666; margin-bottom:16px;}' +
+        'table{width:100%; border-collapse:collapse; font-size:12px;}' +
+        'th, td{border:1px solid #ccc; padding:6px 8px; text-align:left; vertical-align:top; word-break:break-all;}' +
+        'th{background:#f0f0f0;}' +
+        '.cat-row td{background:#e8eaed; font-weight:bold;}' +
+        '@media print { body{padding:0;} }' +
+      '</style></head><body>' +
+      '<h1>' + escapeHtml(projectName) + ' 機材一覧</h1>' +
+      '<div class="meta">出力日時: ' + printedAt + '　件数: ' + items.length + '件</div>' +
+      '<table><thead><tr><th>機材名</th><th>数量</th><th>期間</th><th>発注先</th><th>備考</th></tr></thead>' +
+      '<tbody>' + rowsHtml + '</tbody></table>' +
+      '</body></html>';
+
+    var iframe = document.getElementById('pdf-export-iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'pdf-export-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+    }
+    var doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // 書き込み直後だとレイアウトが完了していないことがあるため、少し待ってから
+    // 印刷ダイアログを開く（スマホでは、印刷ダイアログの中で「PDFとして保存」を選ぶ）。
+    setTimeout(function () {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (e) {
+        showBanner('PDF出力用の画面を開けませんでした', 'error');
+      }
+    }, 150);
+  }
+
   // 【2026/8/27追加】機材カレンダーで、指定した機材・日付の予約を、そのときの
   // 最新bookingsデータから数え直す。重複修正のためこのピッカーへ「戻る」ときに
   // 使う（詳しい理由はopenDayBookingPicker_内のformReturnActionのコメントを参照）。
@@ -1585,6 +1685,8 @@
   // 流用し、どの予約を編集するか選んでもらう。1件を選ぶとその編集フォームが開く。
   function openDayBookingPicker_(equipmentName, dateStr, dayBookings, reopenDetail) {
     openProjectSheetState = { kind: 'dayPicker', equipmentName: equipmentName, dateStr: dateStr, reopenDetail: reopenDetail };
+    // 【2026/9/4追加】重複日の予約選択のときは、PDF出力ボタンは不要なので隠す。
+    setProjectDetailPdfButtonVisible_(false);
     resetProjectDetailScroll_();
     document.getElementById('project-detail-title').textContent = equipmentName + '（' + dateStr + '）';
     document.getElementById('project-detail-summary').textContent =
@@ -3778,7 +3880,10 @@
 
   // ---------- ガントチャート更新 ----------
   function refreshGanttChart() {
-    showConfirmDialog('ガントチャートを最新の内容に更新します。よろしいですか？', { okLabel: '更新する' }).then(function (ok) {
+    // 【2026/9/4追記】表示期間が長い（数年分の）ガントチャートでは、このボタンは
+    // 今日を基準にした近い範囲だけをすばやく更新する（サーバー側のupdateQuickGanttCore_）。
+    // 表示期間全体は毎晩自動で再構築される。
+    showConfirmDialog('ガントチャートを最新の内容に更新します（今日を基準にした近い範囲のみ）。よろしいですか？', { okLabel: '更新する' }).then(function (ok) {
       if (!ok) return;
       showLoading('ガントチャートを更新中...（機材件数が多いと時間がかかります）');
       apiPost({ action: 'refreshGantt' }).then(function (res) {
@@ -4111,6 +4216,10 @@
   document.getElementById('form-delete').addEventListener('click', deleteCurrentBooking);
   document.getElementById('equipment-add-btn').addEventListener('click', addSelectedEquipment);
   document.getElementById('project-detail-close').addEventListener('click', closeProjectDetail);
+  document.getElementById('project-detail-pdf-btn').addEventListener('click', function () {
+    if (!openProjectSheetState || openProjectSheetState.kind !== 'project') return;
+    exportProjectEquipmentPdf_(openProjectSheetState.projectName, openProjectSheetState.items);
+  });
   document.getElementById('equipment-detail-close').addEventListener('click', closeEquipmentCategoryDetail);
   document.getElementById('settings-back').addEventListener('click', closeSettings);
   document.getElementById('form-back').addEventListener('click', closeForm);
