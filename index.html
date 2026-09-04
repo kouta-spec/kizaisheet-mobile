@@ -734,6 +734,11 @@
     </div>
     <button type="button" class="btn-delete" id="settings-disconnect">接続を解除する（この端末の設定・データを削除）</button>
     <div class="hint" style="text-align:center; margin-top:14px; margin-bottom:0;" id="app-version-hint"></div>
+    <!-- 【2026/9/4追加】「アプリ（このページ）」のバージョンと「サーバー（Web App
+         のデプロイ済みコード）」のバージョンを並べて表示する。Apps ScriptのWeb Appは
+         コードを保存しただけでは公開URLに反映されず、デプロイ操作をして初めて
+         反映されるため、この2つがずれていれば「デプロイし忘れ」に気づける。 -->
+    <div class="hint" style="text-align:center; margin-top:4px; margin-bottom:0;" id="server-version-hint">サーバー側バージョン: 未確認（保存して接続、またはこの画面を開いたときの通信結果から表示されます）</div>
   </div>
 </div>
 
@@ -931,7 +936,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-04b';
+  var APP_BUILD_VERSION = '2026-09-04c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -952,6 +957,12 @@
   var dataLoaded = { equipment: false, bookings: false };
   var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
   var categoryOrder = [];
+  // 【2026/9/4追加】findCategoryForEquipment用の「機材名→カテゴリ名」索引キャッシュ。
+  // equipmentByCategory/categoryOrderが変わるたび（setEquipmentCategories実行時や
+  // ログアウト時のリセット時）にnullへ戻し、次回findCategoryForEquipment呼び出し時に
+  // 作り直す（作品詳細シートを開くたびに毎回すべてのカテゴリ×機材名を線形走査していた
+  // 従来の実装が、機材数・カテゴリ数が増えるほど体感で重くなる原因になっていた）。
+  var equipmentCategoryIndex_ = null;
   var supplierList = []; // 発注先の候補（機材リストF列のプルダウンに設定されているレンタル会社名）
   var projectList = []; // 作品名の候補（機材リストに既に登録されている作品名。新規入力も可）
   var PROJECT_CUSTOM_VALUE = '__custom_project__';
@@ -1044,6 +1055,20 @@
     }
   }
 
+  // 【2026/9/4追加】サーバー（Web App）から届いたレスポンスにserverVersion
+  // （Code.gsのGAS_BUILD_VERSION）が含まれていれば、設定画面のバージョン表示を
+  // 更新する。「コードは新しくしたのにWeb Appのデプロイを忘れている」状態に、
+  // 通信するたびその場で気づけるようにするため。
+  function noteServerVersion_(res) {
+    if (res && res.serverVersion) {
+      try {
+        var el = document.getElementById('server-version-hint');
+        if (el) el.textContent = 'サーバー側バージョン: ' + res.serverVersion;
+      } catch (e) { /* 無視 */ }
+    }
+    return res;
+  }
+
   function apiGet(action, extraParams) {
     var url = settings.url + '?action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(settings.token);
     if (extraParams) {
@@ -1052,7 +1077,7 @@
       });
     }
     beginSync();
-    return fetch(url).then(function (res) { return res.json(); }).finally(endSync);
+    return fetch(url).then(function (res) { return res.json(); }).then(noteServerVersion_).finally(endSync);
   }
 
   function apiPost(body) {
@@ -1064,7 +1089,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body)
-    }).then(function (res) { return res.json(); }).finally(endSync);
+    }).then(function (res) { return res.json(); }).then(noteServerVersion_).finally(endSync);
   }
 
   // ---------- 画面表示ヘルパー ----------
@@ -1390,15 +1415,20 @@
     // 行の並び順のまま表示する（あえてソートしない＝APIから届いた順＝シートの行順）。
     // グループ（作品名の見出し）自体の並び順は、「そのグループの中で一番遅い（先の）開始日」を
     // 基準に、新しい順（開始日が遅いもの＝未来の予定が上）にする。
-    function groupMaxStartDate(key) {
+    // 【2026/9/4修正】以前はsortの比較のたびにgroupMaxStartDate(key)を呼び直しており、
+    // 同じグループのmax日付を何度も再計算していた（検索の入力中など、この関数が
+    // 頻繁に呼ばれる場面で無駄が積み重なり体感の重さにつながっていた）。並べ替え前に
+    // 各グループのmax日付を1回だけ計算してキャッシュしておく。
+    var groupMaxDateCache_ = {};
+    groupOrder.forEach(function (key) {
       var max = '';
       groups[key].forEach(function (b) {
         if (b.startDate && b.startDate > max) max = b.startDate;
       });
-      return max;
-    }
+      groupMaxDateCache_[key] = max;
+    });
     groupOrder.sort(function (ka, kb) {
-      var a = groupMaxStartDate(ka), b = groupMaxStartDate(kb);
+      var a = groupMaxDateCache_[ka], b = groupMaxDateCache_[kb];
       if (!a) return 1;
       if (!b) return -1;
       return a < b ? 1 : (a > b ? -1 : 0); // 降順（開始日が遅いグループほど上）
@@ -2354,6 +2384,7 @@
       equipmentByCategory[c.category] = c.items;
       categoryOrder.push(c.category);
     });
+    equipmentCategoryIndex_ = null; // 索引キャッシュを作り直す
     dataLoaded.equipment = true;
     populateCategorySelect();
   }
@@ -2463,12 +2494,21 @@
     return sel.value.trim();
   }
 
+  // 【2026/9/4修正】以前はcategoryOrder×各カテゴリの機材名配列を毎回indexOfで
+  // 線形走査していたため、作品詳細シートを開くたびに（機材点数×カテゴリ数×
+  // カテゴリ内機材数に比例して）処理が重くなっていた。初回呼び出し時に
+  // 「機材名→カテゴリ名」の索引（オブジェクト）を1回だけ作ってキャッシュし、
+  // 以降はO(1)のオブジェクト参照だけで済むようにした。
   function findCategoryForEquipment(name) {
-    for (var i = 0; i < categoryOrder.length; i++) {
-      var cat = categoryOrder[i];
-      if (equipmentByCategory[cat].indexOf(name) !== -1) return cat;
+    if (!equipmentCategoryIndex_) {
+      equipmentCategoryIndex_ = {};
+      categoryOrder.forEach(function (cat) {
+        (equipmentByCategory[cat] || []).forEach(function (n) {
+          if (!(n in equipmentCategoryIndex_)) equipmentCategoryIndex_[n] = cat;
+        });
+      });
     }
-    return '';
+    return equipmentCategoryIndex_[name] || '';
   }
 
   // 【2026/9/3追加】この端末（トークン）で、指定した作品名の予約を追加・編集・削除
@@ -3942,6 +3982,7 @@
       equipmentList = [];
       equipmentByCategory = {};
       categoryOrder = [];
+      equipmentCategoryIndex_ = null;
       supplierList = [];
       projectList = [];
       mobileAllowedProjects = null;
@@ -4318,7 +4359,18 @@
     updateProjectCustomInputVisibility();
     if (this.value === PROJECT_CUSTOM_VALUE) document.getElementById('f-project-custom').focus();
   });
-  document.getElementById('search-input').addEventListener('input', renderCurrentView);
+  // 【2026/9/4修正】以前は入力1文字ごとに毎回renderCurrentView（フィルタ・並べ替え・
+  // 一覧DOMの作り直し）を同期で実行しており、作品数・機材数が多いと入力のたびに
+  // 一覧表示がもたつく原因になっていた。タイピング中は120msデバウンスし、
+  // 入力が止まってから一度だけ再描画する。
+  var searchInputDebounceTimer_ = null;
+  document.getElementById('search-input').addEventListener('input', function () {
+    if (searchInputDebounceTimer_) clearTimeout(searchInputDebounceTimer_);
+    searchInputDebounceTimer_ = setTimeout(function () {
+      searchInputDebounceTimer_ = null;
+      renderCurrentView();
+    }, 120);
+  });
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
   });
