@@ -936,7 +936,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-04d';
+  var APP_BUILD_VERSION = '2026-09-05a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2324,6 +2324,26 @@
     } catch (e) { /* 無視 */ }
   }
 
+  // 【2026/9/5追加】新規追加・編集フォームで、まだ機材リストに存在しない新しい
+  // 作品名を入力して保存したとき、その場でprojectListに反映する。
+  // 以前はrefreshBookings（予約データのみの再取得）しか呼んでおらず、作品名一覧
+  // （projectList）はアプリ起動時にしか取得していなかったため、保存直後に続けて
+  // 別の予約を追加しようとしても、今まさに保存したばかりの新しい作品名が
+  // プルダウンに出てこない（アプリを読み込み直すまで選べない）という不具合が
+  // あった。サーバーへ再度問い合わせなくても、保存に成功した内容がそのまま
+  // 正しい作品名なので、ローカルの一覧に足すだけで十分。
+  // 【重要】作品名アクセス制限（mobileAllowedProjects）が設定されている場合は、
+  // そもそも制限対象のユーザーが新しい作品名を自由入力できない設計になっている
+  // ため、ここでは何もしない（制限の意味が無くならないようにするため）。
+  function addProjectToLocalListIfNew_(project) {
+    if (!project) return;
+    if (mobileAllowedProjects) return;
+    if (projectList.indexOf(project) !== -1) return;
+    projectList.push(project);
+    try { localStorage.setItem('kizai_mobile_project_cache_v1', JSON.stringify(projectList)); } catch (e) { /* 無視 */ }
+    populateProjectSelect();
+  }
+
   function populateProjectSelect(selectedValue) {
     var sel = document.getElementById('f-project');
     var current = selectedValue !== undefined ? selectedValue : sel.value;
@@ -3499,6 +3519,7 @@
         target.endDate = end;
         target.note = note;
       }
+      addProjectToLocalListIfNew_(project);
       hideLoading();
       closeForm();
       setOverlapStateFromAuthoritative_(res);
@@ -3612,6 +3633,7 @@
           price: ''
         });
       });
+      addProjectToLocalListIfNew_(project);
       hideLoading();
       closeForm();
       setOverlapStateFromAuthoritative_(res);
