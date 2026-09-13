@@ -264,6 +264,14 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.18);
   }
   #gantt-empty { padding: 30px 14px; text-align: center; color: var(--sub); font-size: 13px; }
+  /* 【2026/9/16追加】予約の帯にカーソルを合わせたときの詳細吹き出し
+     （表示までの秒数はJS側のGANTT_TOOLTIP_DELAY_MSで調整する）。 */
+  .gantt-tooltip {
+    position: fixed; z-index: 50; max-width: 260px; pointer-events: none;
+    background: rgba(33,31,54,0.95); color: #fff; font-size: 12px; line-height: 1.5;
+    padding: 8px 10px; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    white-space: pre-line;
+  }
   /* 【2026/8/30修正】以前は通常の行として#listの上に表示していたため、機材カレンダーの
      詳細シートなど全画面のオーバーレイ（.overlay、z-index:30）を開いた状態で保存すると、
      このバナーがその裏に隠れて見えなくなり、「重複が直っていなくても警告が消えた＝直った」
@@ -796,6 +804,10 @@
     </div>
     <div id="gantt-empty" style="display:none;">予約データがありません</div>
   </div>
+  <!-- 【2026/9/16追加】予約の帯にカーソルを合わせたときの詳細表示。ブラウザ標準の
+       title属性によるツールチップは表示までの時間（3秒程度）を調整できないため、
+       自前の吹き出しに置き換え、表示までの秒数をJS側で決められるようにした。 -->
+  <div id="gantt-tooltip" class="gantt-tooltip" style="display:none;"></div>
 
   <button class="fab" id="add-fab" title="新しい予約を追加">＋</button>
 </div>
@@ -1040,7 +1052,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-16c';
+  var APP_BUILD_VERSION = '2026-09-16d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1075,6 +1087,11 @@
   // 【2026/9/13修正】機材名の行にカテゴリ名も小さく表示するようになったため、
   // 2段分の高さが収まるよう少しだけ高さを増やした。
   var GANTT_ROW_HEIGHT = 38;
+  // 【2026/9/16追加】予約の帯にカーソルを合わせてから詳細の吹き出しが出るまでの
+  // 秒数（ミリ秒）。以前はブラウザ標準のtitle属性任せで3秒程度かかっていたが、
+  // ここを変えるだけで秒数を調整できるようにした。
+  var GANTT_TOOLTIP_DELAY_MS = 1000;
+  var ganttTooltipTimer_ = null;
   // 【2026/9/14追加】機材名欄をまとめて左右にスワイプするための、現在の共通
   // スクロール量（px、0＝各行とも名前の先頭を表示）。ドラッグ中の状態は
   // ganttNameDrag_（setupGanttNameDrag_内でのみ使用）。
@@ -1977,6 +1994,31 @@
     return d;
   }
 
+  // 【2026/9/16追加】予約の帯にカーソルを合わせたときの詳細吹き出し。
+  // GANTT_TOOLTIP_DELAY_MSで指定した時間だけホバーが続いたら表示する
+  // （ホバーをやめたら即座に消し、タイマーもキャンセルする）。
+  function showGanttTooltip_(barEl, text) {
+    var tip = document.getElementById('gantt-tooltip');
+    if (!tip) return;
+    tip.textContent = text;
+    tip.style.display = 'block';
+    var rect = barEl.getBoundingClientRect();
+    var tipRect = tip.getBoundingClientRect();
+    var top = rect.top - tipRect.height - 8;
+    if (top < 8) top = rect.bottom + 8; // 画面上端に近いときは帯の下に出す
+    var left = rect.left;
+    var maxLeft = window.innerWidth - tipRect.width - 8;
+    if (left > maxLeft) left = Math.max(8, maxLeft);
+    tip.style.top = top + 'px';
+    tip.style.left = left + 'px';
+  }
+
+  function hideGanttTooltip_() {
+    clearTimeout(ganttTooltipTimer_);
+    var tip = document.getElementById('gantt-tooltip');
+    if (tip) tip.style.display = 'none';
+  }
+
   // 【2026/9/14修正】以前はブラウザ標準の横スクロール（overflow-x: auto）を
   // 行ごとに効かせ、scrollLeftをJSで揃える方式にしていたが、この欄自体が
   // 横スクロール可能な親（.gantt-scroll）の上にsticky配置で乗っているため、
@@ -2166,6 +2208,8 @@
     var scrollEl = document.getElementById('gantt-scroll');
     var gridEl = document.getElementById('gantt-grid');
     var emptyEl = document.getElementById('gantt-empty');
+    // 再描画のたびに、古い帯を指していた吹き出しが残らないよう一旦消す。
+    hideGanttTooltip_();
 
     if (!dataLoaded.bookings || !dataLoaded.ganttData) {
       gridEl.innerHTML = '';
@@ -2306,7 +2350,15 @@
         bar.style.background = ganttProjectColors[item.b.project] || '#4361ee';
         bar.style.gridColumn = (startIdx + 1) + ' / ' + (endIdx + 2);
         bar.textContent = item.b.project;
-        bar.title = item.b.project + '　' + item.b.equipment + '　' + item.b.startDate + '〜' + item.b.endDate;
+        // 【2026/9/16修正】ブラウザ標準のtitle属性は表示までの時間を調整できない
+        // （実測3秒程度）ため、自前の吹き出しに置き換え、GANTT_TOOLTIP_DELAY_MS
+        // （1秒）で表示できるようにした。
+        var tooltipText = item.b.project + '　' + item.b.equipment + '　' + item.b.startDate + '〜' + item.b.endDate;
+        bar.addEventListener('mouseenter', function () {
+          clearTimeout(ganttTooltipTimer_);
+          ganttTooltipTimer_ = setTimeout(function () { showGanttTooltip_(bar, tooltipText); }, GANTT_TOOLTIP_DELAY_MS);
+        });
+        bar.addEventListener('mouseleave', hideGanttTooltip_);
         track.appendChild(bar);
       });
       frag.appendChild(track);
