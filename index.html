@@ -228,6 +228,13 @@
   .gantt-cat-btn:active { transform: scale(0.95); }
   .gantt-scroll {
     overflow: auto; -webkit-overflow-scrolling: touch;
+    /* 【2026/9/18修正】固定で「画面の高さ - 300px」としていたが、スマホ・タブレットを
+       横向きにすると画面自体の高さが小さくなるため、同じ300pxを引いてもほとんど
+       高さが残らず、機材名が数行しか見えなくなってしまっていた（ヘッダーや
+       タブなど上にある部分の実際の高さは向きを変えても変わらないのに、画面の
+       高さだけが変わるため）。ここは初期値・JS未実行時のフォールバックとしてのみ
+       残し、実際の高さはadjustGanttScrollHeight_()でこの要素の実際の位置を測って
+       JSから直接指定する（縦向き・横向きどちらでも、画面の一番下まで使い切る）。 */
     max-height: calc(100vh - 300px); border-top: 1px solid var(--border);
     background: #fff;
   }
@@ -767,6 +774,44 @@
   .confirm-btn.confirm-cancel { background: var(--tint); color: var(--text); }
   .confirm-btn.confirm-ok { background: linear-gradient(135deg, var(--blue-dark), var(--blue)); color: white; }
   .confirm-btn.confirm-ok.danger { background: linear-gradient(135deg, #c81e42, var(--red)); }
+
+  /* 【2026/9/18追加】スマホ・タブレットを横向き（ランドスケープ）にすると、
+     画面の横幅が640pxよりずっと広くなる端末が多いのに対し、#appの幅を
+     640pxで固定していたため、左右に大きな余白ができて見づらいという指摘が
+     あった。横向きのときだけ、もっと画面幅を使えるようにする
+     （縦向きでは今まで通り640px幅のまま）。
+     あわせて、横向きは画面そのものの高さも小さくなるため、ガントチャートの
+     表本体（#gantt-scroll）の高さはadjustGanttScrollHeight_()で測って直接
+     指定するようにしたが、それでもヘッダーやタブ、ガントチャート上部の各行
+     （更新ボタン・期間表示・月ボタン・カテゴリボタン）が縦向きと同じ余白の
+     ままだと、上に取られる分が多すぎて機材の行がほとんど見えなくなってしまう。
+     横向きのときだけ、これらの上下の余白を切り詰めて、その分ガントチャートの
+     行がより多く見えるようにする（見た目の構成自体は変えない）。
+     ※ このブロックは、上書きしたいセレクタ（.gantt-navなど）の元の定義より
+     あとに置く必要がある。CSSは詳細度が同じ場合は「後に書かれた方」が勝つため、
+     @media自体は条件付きでも、元の定義より前に置くと（横向きであっても）
+     元の定義の方が後勝ちで効いてしまい、意図した上書きにならない。 */
+  @media (orientation: landscape) {
+    #app { max-width: min(1100px, 100%); }
+    header { padding: calc(env(safe-area-inset-top) + 6px) 18px 8px; }
+    header h1 { font-size: 16px; }
+    .header-logo { width: 22px; height: 22px; }
+    .tabs { padding: calc(env(safe-area-inset-top) + 6px) 14px 6px; }
+    .tab-btn { padding: 6px 0; }
+    .gantt-actions { padding: 0 14px 6px; }
+    .gantt-actions button { padding: 6px 0; }
+    .gantt-nav { padding: 4px 0 6px; }
+    .gantt-month-strip { padding: 0 14px 6px; }
+    .gantt-month-chip { padding: 4px 10px; }
+    #gantt-cat-shortcuts { padding: 0 14px 6px; }
+    .gantt-cat-btn { padding: 4px 10px; }
+    /* 横向きは画面の横幅には余裕があるぶん、期間表示・今日ボタンの行と、
+       月ボタンの行を1つの行にまとめて、縦方向はその1行分だけで済むようにする
+       （月ボタンの並び自体は今まで通りこの中で横スクロールできる）。 */
+    .gantt-nav-row { display: flex; align-items: center; gap: 8px; padding: 0 14px; }
+    .gantt-nav-row .gantt-nav { flex: 0 0 auto; padding: 4px 0; }
+    .gantt-nav-row .gantt-month-strip { flex: 1 1 auto; min-width: 0; padding: 4px 0; }
+  }
 </style>
 </head>
 <body>
@@ -820,14 +865,19 @@
        同じ形式（機材名を縦に並べ、日付を横に取り、作品ごとに色分けした帯で予約期間を示す）
        のガントチャートをアプリの中だけで見られるようにする。 -->
   <div id="gantt-view" style="display:none;">
-    <div class="gantt-nav">
-      <span id="gantt-range-label" class="gantt-range-label"></span>
-      <button type="button" id="gantt-nav-today" class="gantt-nav-btn gantt-nav-today">今日</button>
+    <!-- 【2026/9/18追加】.gantt-nav-rowでこの2つをまとめておくと、横向き（画面の
+         高さが少ない）のときだけ、CSS側でこの2つを横に並べて1行分の高さを
+         節約できる（縦向きのときは今まで通り上下に並んだまま）。 -->
+    <div class="gantt-nav-row">
+      <div class="gantt-nav">
+        <span id="gantt-range-label" class="gantt-range-label"></span>
+        <button type="button" id="gantt-nav-today" class="gantt-nav-btn gantt-nav-today">今日</button>
+      </div>
+      <!-- 【2026/9/17修正 その2】前後の月へ移動するためのボタンを、タップしないと
+           現れないピッカーではなく、最初から見える横並びのボタン一覧にした。
+           入りきらない月はこの行を指で左右にスライドすれば見られる。 -->
+      <div id="gantt-month-strip" class="gantt-month-strip"></div>
     </div>
-    <!-- 【2026/9/17修正 その2】前後の月へ移動するためのボタンを、タップしないと
-         現れないピッカーではなく、最初から見える横並びのボタン一覧にした。
-         入りきらない月はこの行を指で左右にスライドすれば見られる。 -->
-    <div id="gantt-month-strip" class="gantt-month-strip"></div>
     <div id="gantt-cat-shortcuts" class="gantt-cat-shortcuts"></div>
     <div id="gantt-scroll" class="gantt-scroll">
       <div id="gantt-grid" class="gantt-grid"></div>
@@ -1082,7 +1132,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-18a';
+  var APP_BUILD_VERSION = '2026-09-18b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1546,6 +1596,23 @@
     });
   }
 
+  // 【2026/9/18追加】ガントチャートの表本体（#gantt-scroll）の高さを、CSSの
+  // 固定値（calc(100vh - 300px)）ではなく、実際にこの要素が画面のどこから
+  // 始まっているかを測ったうえで「そこから画面の一番下まで」に合わせて
+  // JSから直接指定する。こうすることで、縦向き・横向きのどちらでも、
+  // ヘッダーやタブなど上に来る部分の高さがどう変わっても、機材の行が
+  // 画面の下までしっかり見えるようになる（横向きにすると画面自体の高さが
+  // 小さくなるため、固定のpx数を引くだけでは行がほとんど見えなくなって
+  // しまっていた）。
+  function adjustGanttScrollHeight_() {
+    var scrollEl = document.getElementById('gantt-scroll');
+    if (!scrollEl || document.getElementById('gantt-view').style.display === 'none') return;
+    var rect = scrollEl.getBoundingClientRect();
+    var available = window.innerHeight - rect.top - 10; // 画面の一番下に少しだけ余白を残す
+    if (available < 120) available = 120; // 極端に小さくなりすぎないよう最低限は確保する
+    scrollEl.style.maxHeight = available + 'px';
+  }
+
   // ---------- タブ切り替え ----------
   function switchView(view) {
     currentView = view;
@@ -1563,6 +1630,9 @@
     if (isGantt) {
       document.getElementById('empty').style.display = 'none';
       document.getElementById('summary-bar').style.display = 'none';
+      // display:noneのままだとgetBoundingClientRect()が正しく測れないため、
+      // 表示に切り替えたあと（描画後）に高さを合わせ直す。
+      requestAnimationFrame(adjustGanttScrollHeight_);
     }
     renderCurrentView();
   }
@@ -2431,6 +2501,7 @@
     document.getElementById('gantt-range-label').textContent =
       formatDateStr(days[0]) + ' 〜 ' + formatDateStr(days[days.length - 1]);
     renderGanttMonthStrip_();
+    adjustGanttScrollHeight_();
 
     // 表示期間内の予約だけを、機材名ごとにまとめておく。
     var byEquipment = {};
@@ -2547,11 +2618,19 @@
     // しまい、スライドが止まったように感じられてしまう。そのため、自動延長中
     // （ganttSuppressAutoCenter_）はここをスキップし、延長処理側で計算した
     // スクロール位置をそのまま保つ。
+    // 【2026/9/18追加 その2】「今日」を左端から2日分だけ余白を空けて表示する
+    // 仕様上、この位置は横スクロールの左端（延長判定のしきい値）に非常に
+    // 近くなることが多く、何もしないとこのスクロール位置の設定自体が
+    // scrollイベントとして自動延長の判定に引っかかり、表示するたびに勝手に
+    // 過去方向へ延長されてしまっていた。ここでのスクロール位置設定は
+    // 自動延長とは無関係なので、ganttScrollAdjustPending_を立てて無視させる。
     if (!ganttSuppressAutoCenter_) {
       var todayIdx = -1;
       for (var t = 0; t < days.length; t++) { if (formatDateStr(days[t]) === todayKey) { todayIdx = t; break; } }
       if (todayIdx >= 0) {
+        ganttScrollAdjustPending_ = true;
         scrollEl.scrollLeft = Math.max(0, (todayIdx - 2) * GANTT_DAY_WIDTH);
+        requestAnimationFrame(function () { ganttScrollAdjustPending_ = false; });
       }
     }
   }
@@ -5167,6 +5246,18 @@
   // もっと前の日付まで途中で止まらずに見られるようにする（詳細はコメント参照）。
   // ページ内で1回だけ仕込めばよい。
   setupGanttHorizontalInfiniteScroll_();
+  // 【2026/9/18追加】画面を回転させた（縦⇔横）ときや、ブラウザのアドレスバーの
+  // 出入りなどで画面の高さそのものが変わったときも、ガントチャート本体の高さを
+  // 測り直す。回転直後はブラウザによって実際の画面サイズがまだ更新されて
+  // いないことがあるため、少し時間を置いてからもう一度測り直す。
+  window.addEventListener('resize', function () {
+    if (currentView === 'gantt') adjustGanttScrollHeight_();
+  });
+  window.addEventListener('orientationchange', function () {
+    setTimeout(function () {
+      if (currentView === 'gantt') adjustGanttScrollHeight_();
+    }, 300);
+  });
   // 【2026/9/12追加】アプリ内ガントチャートの表示期間ナビゲーション。
   // 【2026/9/17修正】「前」「次」ボタン（30日ずつ移動）を廃止した。
   // 【2026/9/17修正 その2】タップして開く月選択ピッカー（input type="month"）も、
