@@ -1029,7 +1029,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-14a';
+  var APP_BUILD_VERSION = '2026-09-14b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1069,6 +1069,13 @@
   // ganttNameDrag_（setupGanttNameDrag_内でのみ使用）。
   var ganttNameScrollX = 0;
   var ganttNameDrag_ = null;
+  // 【2026/9/14修正】ドラッグ中に毎回scrollWidth/clientWidthを測り直すと、
+  // 端末によっては「スワイプが重い」と感じるほど処理が重くなることが分かった
+  // （行数が多いほど顕著）。そこで、行ごとの「はみ出し量（px）」は描画の直後に
+  // 1回だけ測って配列にキャッシュしておき、ドラッグ中はそのキャッシュを見るだけに
+  // する（re-measureしない）。データが更新されて再描画されるたびに作り直す。
+  var ganttNameRows_ = []; // [{textEl, maxScroll}, ...]
+  var ganttNameRafPending_ = false;
   var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
   var categoryOrder = [];
   // 【2026/9/4追加】findCategoryForEquipment用の「機材名→カテゴリ名」索引キャッシュ。
@@ -1967,34 +1974,51 @@
   // ブラウザ側でうまく発生しない）ことがあると分かった。
   // そこで、ブラウザの横スクロールには頼らず、指のドラッグ量をJSで直接読み取り、
   // 全行の文字にtransform（translateX）を同時にかける自前実装に変更した。
-  // ・ganttNameRowMax_: その行の文字が、列の幅からどれだけはみ出しているか（px）
-  // ・applyGanttNameScrollX_: 現在の共通スクロール量（ganttNameScrollX）を、
-  //   はみ出し量でその行ごとにクランプしたうえで、実際に画面へ反映する
-  // ・setupGanttNameDrag_: 機材名欄のどこかを指でドラッグしたときに
-  //   ganttNameScrollXを更新し、applyGanttNameScrollX_を呼ぶ（1回だけ設定すればよい）
-  function ganttNameRowMax_(wrapEl) {
-    var textEl = wrapEl.firstChild;
-    if (!textEl) return 0;
-    var max = textEl.scrollWidth - wrapEl.clientWidth;
-    return max > 0 ? max : 0;
+  // ・rebuildGanttNameRowCache_: 描画直後に1回だけ呼び、行ごとの「はみ出し量」を測って
+  //   キャッシュする（scrollWidth/clientWidthの測定はレイアウト再計算を伴い重いため、
+  //   ドラッグ中に毎回測らないようにするのが目的）。
+  // ・applyGanttNameScrollX_: キャッシュした値をもとに、現在の共通スクロール量
+  //   （ganttNameScrollX）を行ごとにクランプしたうえで、transformを書き込むだけ
+  //   （測定はしない。ドラッグ中に高頻度で呼んでも軽い）。
+  // ・setupGanttNameDrag_: 機材名欄のどこかを指でドラッグしたときにganttNameScrollXを
+  //   更新し、次の画面更新のタイミング（requestAnimationFrame）でまとめて反映する
+  //   （1回だけ設定すればよい）。
+  function rebuildGanttNameRowCache_() {
+    var wraps = document.querySelectorAll('.grl-name');
+    var rows = [];
+    for (var i = 0; i < wraps.length; i++) {
+      var textEl = wraps[i].firstChild;
+      if (!textEl) continue;
+      var max = textEl.scrollWidth - wraps[i].clientWidth;
+      rows.push({ textEl: textEl, maxScroll: max > 0 ? max : 0 });
+    }
+    ganttNameRows_ = rows;
   }
 
   function applyGanttNameScrollX_() {
-    var wraps = document.querySelectorAll('.grl-name');
+    var rows = ganttNameRows_;
     var overallMax = 0;
-    for (var i = 0; i < wraps.length; i++) {
-      var m = ganttNameRowMax_(wraps[i]);
-      if (m > overallMax) overallMax = m;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].maxScroll > overallMax) overallMax = rows[i].maxScroll;
     }
     if (ganttNameScrollX > overallMax) ganttNameScrollX = overallMax;
     if (ganttNameScrollX < 0) ganttNameScrollX = 0;
-    for (var j = 0; j < wraps.length; j++) {
-      var wrap = wraps[j];
-      var textEl = wrap.firstChild;
-      if (!textEl) continue;
-      var x = Math.min(ganttNameScrollX, ganttNameRowMax_(wrap));
-      textEl.style.transform = 'translateX(-' + x + 'px)';
+    for (var j = 0; j < rows.length; j++) {
+      var x = ganttNameScrollX < rows[j].maxScroll ? ganttNameScrollX : rows[j].maxScroll;
+      rows[j].textEl.style.transform = 'translateX(-' + x + 'px)';
     }
+  }
+
+  // ドラッグ中、指の動きのたびにapplyGanttNameScrollX_を呼ぶと、画面の描画タイミングと
+  // ずれて無駄が多くなる（1フレームの間に何度も呼ばれることがある）。
+  // requestAnimationFrameでまとめ、1フレームにつき1回だけ実際の反映を行う。
+  function scheduleApplyGanttNameScrollX_() {
+    if (ganttNameRafPending_) return;
+    ganttNameRafPending_ = true;
+    requestAnimationFrame(function () {
+      ganttNameRafPending_ = false;
+      applyGanttNameScrollX_();
+    });
   }
 
   // 【2026/9/14追加】ページ内で1回だけ呼び出し、ガントチャート内の機材名欄の
@@ -2014,7 +2038,7 @@
       if (!ganttNameDrag_.moved && Math.abs(dx) < 4) return; // 指の小さなブレでは反応させない
       ganttNameDrag_.moved = true;
       ganttNameScrollX = ganttNameDrag_.startScrollX - dx;
-      applyGanttNameScrollX_();
+      scheduleApplyGanttNameScrollX_();
       ev.preventDefault();
     });
     function endDrag(ev) {
@@ -2200,7 +2224,9 @@
     });
 
     gridEl.appendChild(frag);
-    // 機材名欄の横スクロール位置（ganttNameScrollX）を、再描画後の新しい行にも反映する。
+    // 行ごとの「はみ出し量」を測り直してキャッシュしたうえで、機材名欄の横スクロール
+    // 位置（ganttNameScrollX）を、再描画後の新しい行にも反映する。
+    rebuildGanttNameRowCache_();
     applyGanttNameScrollX_();
 
     // 初回表示時は「今日」がだいたい見える位置まで横スクロールしておく。
@@ -4413,6 +4439,7 @@
       ganttWindowStart = null;
       ganttNameScrollX = 0;
       ganttNameDrag_ = null;
+      ganttNameRows_ = [];
 
       document.getElementById('settings-url').value = '';
       document.getElementById('settings-token').value = '';
