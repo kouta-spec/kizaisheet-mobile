@@ -1082,7 +1082,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-17b';
+  var APP_BUILD_VERSION = '2026-09-18a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1112,6 +1112,26 @@
   // nullのときは初回描画時に「今日の7日前」を起点として設定する。
   var ganttWindowStart = null;
   var GANTT_WINDOW_DAYS = 45;
+  // 【2026/9/18追加】「次」「今月を選ぶ」ボタンを押さなくても、ガントチャート本体を
+  // 指でスライドし続けるだけで、もっと先・もっと前の日付まで途中で止まらずに
+  // 見られるようにしたい、との要望に対応。表示中の日数（ganttWindowDays）は
+  // GANTT_WINDOW_DAYSを初期値として、端に近づくたびにGANTT_EXTEND_CHUNK_DAYSずつ
+  // 増やしていく（＝実際にレンダリングする日数そのものを伸ばす）。「今日」ボタンや
+  // 月ボタンで直接ジャンプしたときは、ここをGANTT_WINDOW_DAYSに戻す
+  // （伸ばしすぎた状態が別の月へジャンプしたあとも残り続けないように）。
+  var ganttWindowDays = GANTT_WINDOW_DAYS;
+  var GANTT_EXTEND_CHUNK_DAYS = 30;
+  // スプレッドシート側（マスターガントチャート）の表示期間を2〜3年程度に伸ばして
+  // 運用している実態に合わせ、アプリ側で際限なく伸び続けないよう、同程度の上限
+  // （約3年）を設けておく。
+  var GANTT_MAX_WINDOW_DAYS = 1095;
+  // 端に近づいたことを検知して自動延長している最中に、延長処理自身が起こす
+  // scrollイベント／scrollLeftの調整で再び延長処理が呼ばれてしまわないための
+  // ガード用フラグ。
+  var ganttScrollAdjustPending_ = false;
+  // 自動延長のための再描画では、通常時のように「今日」が見える位置へ強制的に
+  // スクロール位置を戻さないようにするためのフラグ。
+  var ganttSuppressAutoCenter_ = false;
   var GANTT_DAY_WIDTH = 28;
   var GANTT_LABEL_WIDTH = 108;
   // 【2026/9/13修正】機材名の行にカテゴリ名も小さく表示するようになったため、
@@ -2065,6 +2085,10 @@
           var nd = new Date(parseInt(this.dataset.y, 10), parseInt(this.dataset.m, 10), 1);
           nd.setHours(0, 0, 0, 0);
           ganttWindowStart = nd;
+          // 【2026/9/18追加】スライドで端まで延長した状態のまま別の月へ
+          // ジャンプすると、ジャンプ先でも巨大な表示日数を引きずってしまうため、
+          // 月を選んでジャンプしたときは表示日数を初期値に戻す。
+          ganttWindowDays = GANTT_WINDOW_DAYS;
           renderGanttView();
         });
         frag.appendChild(btn);
@@ -2275,6 +2299,54 @@
     scheduleApplyGanttNameScrollX_();
   }
 
+  // 【2026/9/18追加】ガントチャート本体（日付が並ぶ側）の横スクロールが、
+  // これまでは最初に描画した日数（GANTT_WINDOW_DAYS＝45日）の端まで来ると
+  // それ以上先へ進めなかった。「次」「今月を選ぶ」ボタンを押さなくても、
+  // 指でスライドし続けるだけでもっと先・もっと前が見られるようにするため、
+  // #gantt-scrollの横スクロール位置を監視し、端に近づくたびに実際に描画する
+  // 日数（ganttWindowDays）自体を延ばす。ページ内で1回だけ仕込めばよい
+  // （#gantt-scroll自体は再描画で消えない）。
+  function setupGanttHorizontalInfiniteScroll_() {
+    var scrollEl = document.getElementById('gantt-scroll');
+    if (!scrollEl) return;
+    scrollEl.addEventListener('scroll', function () {
+      if (ganttScrollAdjustPending_) return; // 延長処理自身によるスクロールは無視する
+      if (currentView !== 'gantt') return;
+      if (ganttWindowDays >= GANTT_MAX_WINDOW_DAYS) return;
+      var edge = GANTT_DAY_WIDTH * 6; // 端からおよそ6日分に近づいたら延長する
+      if (scrollEl.scrollLeft < edge) {
+        ganttExtendGanttWindow_('before', scrollEl);
+      } else if (scrollEl.scrollWidth - (scrollEl.scrollLeft + scrollEl.clientWidth) < edge) {
+        ganttExtendGanttWindow_('after', scrollEl);
+      }
+    }, { passive: true });
+  }
+
+  function ganttExtendGanttWindow_(direction, scrollEl) {
+    var chunk = Math.min(GANTT_EXTEND_CHUNK_DAYS, GANTT_MAX_WINDOW_DAYS - ganttWindowDays);
+    if (chunk <= 0) return;
+    ganttScrollAdjustPending_ = true;
+    ganttSuppressAutoCenter_ = true;
+    if (direction === 'before') {
+      var newStart = new Date(ganttWindowStart);
+      newStart.setDate(newStart.getDate() - chunk);
+      ganttWindowStart = newStart;
+      ganttWindowDays += chunk;
+      renderGanttView();
+      // 手前に列が増えた分だけ、見た目の位置がずれないようスクロール位置を
+      // 補正する（そうしないと、延長した瞬間に画面がガクッと動いて見える）。
+      scrollEl.scrollLeft += chunk * GANTT_DAY_WIDTH;
+    } else {
+      ganttWindowDays += chunk;
+      renderGanttView();
+      // 末尾に列を足すだけなので、既存のスクロール位置はそのままで問題ない。
+    }
+    ganttSuppressAutoCenter_ = false;
+    // 上のscrollLeftの操作／再描画自体がscrollイベントを発生させることがあるため、
+    // 次の描画フレームまではガードを維持し、延長処理が連鎖的に呼ばれるのを防ぐ。
+    requestAnimationFrame(function () { ganttScrollAdjustPending_ = false; });
+  }
+
   // 【2026/9/13修正】作品名と色マークの凡例は廃止し、代わりに「機材カテゴリー」の
   // ショートカットボタンを表示する。タップすると、そのカテゴリの最初の機材行まで
   // 縦方向にスクロールする（マスターガントチャートの並び順＝rowsの並び順の中で、
@@ -2347,7 +2419,7 @@
     if (!ganttProjectColors || typeof ganttProjectColors !== 'object') ganttProjectColors = {};
 
     var days = [];
-    for (var i = 0; i < GANTT_WINDOW_DAYS; i++) {
+    for (var i = 0; i < ganttWindowDays; i++) {
       var d = new Date(ganttWindowStart);
       d.setDate(d.getDate() + i);
       days.push(d);
@@ -2470,10 +2542,17 @@
     applyGanttNameScrollX_();
 
     // 初回表示時は「今日」がだいたい見える位置まで横スクロールしておく。
-    var todayIdx = -1;
-    for (var t = 0; t < days.length; t++) { if (formatDateStr(days[t]) === todayKey) { todayIdx = t; break; } }
-    if (todayIdx >= 0) {
-      scrollEl.scrollLeft = Math.max(0, (todayIdx - 2) * GANTT_DAY_WIDTH);
+    // 【2026/9/18追加】端まで来て自動延長した際の再描画では、これをやると
+    // スライドしている途中でスクロール位置が「今日」の位置へ引き戻されて
+    // しまい、スライドが止まったように感じられてしまう。そのため、自動延長中
+    // （ganttSuppressAutoCenter_）はここをスキップし、延長処理側で計算した
+    // スクロール位置をそのまま保つ。
+    if (!ganttSuppressAutoCenter_) {
+      var todayIdx = -1;
+      for (var t = 0; t < days.length; t++) { if (formatDateStr(days[t]) === todayKey) { todayIdx = t; break; } }
+      if (todayIdx >= 0) {
+        scrollEl.scrollLeft = Math.max(0, (todayIdx - 2) * GANTT_DAY_WIDTH);
+      }
     }
   }
 
@@ -5084,6 +5163,10 @@
   // 【2026/9/14追加】機材名欄をまとめてドラッグでスクロールできるようにする
   // （ページ内で1回だけ仕込めばよい。#gantt-scroll自体は再描画で消えない）。
   setupGanttNameDrag_();
+  // 【2026/9/18追加】ガントチャート本体を指でスライドし続けるだけで、もっと先・
+  // もっと前の日付まで途中で止まらずに見られるようにする（詳細はコメント参照）。
+  // ページ内で1回だけ仕込めばよい。
+  setupGanttHorizontalInfiniteScroll_();
   // 【2026/9/12追加】アプリ内ガントチャートの表示期間ナビゲーション。
   // 【2026/9/17修正】「前」「次」ボタン（30日ずつ移動）を廃止した。
   // 【2026/9/17修正 その2】タップして開く月選択ピッカー（input type="month"）も、
@@ -5093,6 +5176,9 @@
   // 指でスライドすれば見られるようにした。
   document.getElementById('gantt-nav-today').addEventListener('click', function () {
     ganttWindowStart = ganttDefaultWindowStart_();
+    // 【2026/9/18追加】月ボタンのジャンプと同様、「今日」に戻ったときも表示日数を
+    // 初期値に戻しておく。
+    ganttWindowDays = GANTT_WINDOW_DAYS;
     renderGanttView();
   });
   document.getElementById('bg-choose-btn').addEventListener('click', function () {
