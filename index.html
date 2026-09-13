@@ -240,10 +240,12 @@
     white-space: nowrap; overflow: hidden; position: relative;
   }
   .grl-name-text { display: inline-block; white-space: nowrap; will-change: transform; }
+  /* 【2026/9/16修正】日付が見づらいという指摘に対応し、日付1つ1つを枠で囲んで、
+     どこからどこまでが同じ日か分かりやすくした。 */
   .gantt-head-cell {
     position: sticky; top: 0; z-index: 1; background: #fbfbfd;
     display: flex; align-items: center; justify-content: center;
-    font-size: 10.5px; color: var(--sub); border-bottom: 1px solid var(--border);
+    font-size: 10.5px; color: var(--sub); border: 1px solid var(--border);
     font-variant-numeric: tabular-nums;
   }
   .gantt-head-cell.gc-sat { background: #cfe2ff; }
@@ -392,13 +394,18 @@
   .form-mc-hint-box.state-start { background: #e8ecfe; color: var(--blue-dark); }
   .form-mc-hint-box.state-end { background: #fff2da; color: #a35a00; }
   .form-mc-hint-box.state-done { background: #dcf7ec; color: #0b8f61; }
+  /* 【2026/9/16修正】カレンダーの日付の数字が見づらいという指摘に対応し、
+     文字をはっきり黒くした（背景画像を設定している場合、薄い色だと背景の写真に
+     紛れて読みにくくなっていたため）。前後の月の日付（.mc-other）も、以前は
+     背景が完全に透明で写真がそのまま透けて見えていたが、うっすら白い背景を
+     敷いて数字が読みやすいようにした。 */
   .mc-cell {
     aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
-    border-radius: 7px; font-size: 10px; background: var(--tint); color: var(--text); cursor: pointer;
+    border-radius: 7px; font-size: 10px; background: var(--tint); color: #000; font-weight: 600; cursor: pointer;
     transition: transform 0.1s ease-out;
   }
   .mc-cell:active { transform: scale(0.88); }
-  .mc-cell.mc-other { background: transparent; }
+  .mc-cell.mc-other { background: rgba(255,255,255,0.55); color: #000; }
   .mc-cell.mc-booked { background: var(--red); color: white; font-weight: 700; }
   /* 【2026/8/27追加】期間重複（同じ機材に2件以上の予約が重なっている日）専用の表示。
      通常の予約あり（mc-booked、赤一色）とひと目で見分けられるよう、斜めの縞模様にしている。 */
@@ -1029,7 +1036,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-16a';
+  var APP_BUILD_VERSION = '2026-09-16b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
