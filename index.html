@@ -252,7 +252,11 @@
   .gantt-head-cell.gc-sun { background: #ffd6d6; }
   .gantt-head-cell.gc-today { font-weight: 700; color: var(--blue-dark); box-shadow: inset 0 -2px 0 var(--blue); }
   .gantt-corner { position: sticky; top: 0; left: 0; z-index: 3; background: #fbfbfd; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
-  .gantt-track { position: relative; display: grid; align-items: center; border-bottom: 1px solid #f0f0f0; }
+  /* 【2026/9/16修正】日付の枠をヘッダーだけでなく、ガントチャート本体（予約の帯が
+     並ぶ部分）にも入れて、どの帯がどの日付にあたるか縦の線でも分かりやすくした
+     （縦線の実体はbackground-image、1日ぶんの幅で1本ずつJS側で描く。行数が多い
+     ときに1日ごとのdiv要素を大量に作るより軽いため）。 */
+  .gantt-track { position: relative; display: grid; align-items: center; border-bottom: 1px solid #f0f0f0; border-right: 1px solid var(--border); }
   .gantt-bar {
     grid-row: 1; height: 20px; border-radius: 5px; padding: 0 6px;
     font-size: 10.5px; line-height: 20px; color: #fff; font-weight: 700;
@@ -1036,7 +1040,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-16b';
+  var APP_BUILD_VERSION = '2026-09-16c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2288,6 +2292,9 @@
       track.style.gridColumn = '2 / span ' + days.length;
       track.style.gridRow = String(gridRow);
       track.style.gridTemplateColumns = 'repeat(' + days.length + ', ' + GANTT_DAY_WIDTH + 'px)';
+      // 日付ごとの縦の区切り線（ヘッダーの日付の枠と同じ間隔）。
+      track.style.backgroundImage = 'linear-gradient(to right, var(--border) 1px, transparent 1px)';
+      track.style.backgroundSize = GANTT_DAY_WIDTH + 'px 100%';
 
       var list = byEquipment[name] || [];
       list.forEach(function (item) {
