@@ -192,7 +192,29 @@
   }
   .gantt-nav-btn:active { transform: scale(0.96); }
   .gantt-nav-today { color: var(--blue-dark); background: var(--tint); }
-  .gantt-range-label { flex: 1; text-align: center; font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; }
+  .gantt-range-label {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 10px; background: #fff;
+    padding: 7px 10px; font-size: 12.5px; font-weight: 700; color: var(--sub);
+    font-variant-numeric: tabular-nums;
+  }
+  /* 【2026/9/17修正 その2】期間表示をタップして月選択ピッカーを開く方式は、
+     選べる月の一覧が最初は見えず「タップしないと何ができるか分からない」
+     ものだった。代わりに月のボタンを最初から横一列に並べて見えるようにし、
+     まだ画面に入っていない月は、この行自体を指で左右にスライドすることで
+     見られるようにした。ボタンをタップすればその月へ直接ジャンプする。 */
+  .gantt-month-strip {
+    display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding: 0 14px 10px; scroll-snap-type: x proximity;
+  }
+  .gantt-month-strip::-webkit-scrollbar { display: none; }
+  .gantt-month-chip {
+    flex: 0 0 auto; border: 1px solid var(--border); background: #fff; border-radius: 10px;
+    padding: 6px 12px; font-size: 12.5px; font-weight: 700; color: var(--sub); cursor: pointer;
+    white-space: nowrap; scroll-snap-align: center;
+  }
+  .gantt-month-chip:active { transform: scale(0.96); }
+  .gantt-month-chip.active { color: var(--blue-dark); background: var(--tint); border-color: var(--blue-dark); }
   /* 【2026/9/13追加】作品名の凡例（色マーク）は廃止し、代わりに機材カテゴリーへ
      ジャンプするショートカットボタンの並びにした。ボタンが多いときは横スクロール
      できるようにする。 */
@@ -230,6 +252,12 @@
     /* 縦方向のスクロール（ガントチャート全体を上下に見る操作）はこれまで通り
        ブラウザ標準の動きに任せつつ、横方向のドラッグだけは自前のJSに渡す。 */
     touch-action: pan-y;
+    /* 【2026/9/17修正】PCのマウスでこの欄をドラッグすると、ブラウザ標準の
+       「文字列選択」が同時に発生し、ドラッグそのものが横スライドとして
+       効かないことがあった。ここで文字選択自体を禁止し、下のpointerdownでの
+       preventDefault()とあわせてマウスドラッグを確実にスライド操作として
+       扱えるようにした。 */
+    user-select: none; -webkit-user-select: none;
   }
   .grl-cat {
     font-size: 9.5px; color: var(--sub); font-weight: 700; line-height: 1.2;
@@ -793,11 +821,13 @@
        のガントチャートをアプリの中だけで見られるようにする。 -->
   <div id="gantt-view" style="display:none;">
     <div class="gantt-nav">
-      <button type="button" id="gantt-nav-prev" class="gantt-nav-btn">◀ 前</button>
       <span id="gantt-range-label" class="gantt-range-label"></span>
-      <button type="button" id="gantt-nav-next" class="gantt-nav-btn">次 ▶</button>
       <button type="button" id="gantt-nav-today" class="gantt-nav-btn gantt-nav-today">今日</button>
     </div>
+    <!-- 【2026/9/17修正 その2】前後の月へ移動するためのボタンを、タップしないと
+         現れないピッカーではなく、最初から見える横並びのボタン一覧にした。
+         入りきらない月はこの行を指で左右にスライドすれば見られる。 -->
+    <div id="gantt-month-strip" class="gantt-month-strip"></div>
     <div id="gantt-cat-shortcuts" class="gantt-cat-shortcuts"></div>
     <div id="gantt-scroll" class="gantt-scroll">
       <div id="gantt-grid" class="gantt-grid"></div>
@@ -1052,7 +1082,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-16d';
+  var APP_BUILD_VERSION = '2026-09-17b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1104,6 +1134,10 @@
   // する（re-measureしない）。データが更新されて再描画されるたびに作り直す。
   var ganttNameRows_ = []; // [{textEl, maxScroll}, ...]
   var ganttNameRafPending_ = false;
+  // 【2026/9/17追加】ガントチャートの月移動用ボタン一覧（今日を基準に前後を
+  // 一定期間ぶん用意しておく。ボタン自体は初回描画時に一度だけ作り、以降は
+  // 使い回す＝renderGanttMonthStrip_参照）。
+  var ganttMonthList_ = null;
   var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
   var categoryOrder = [];
   // 【2026/9/4追加】findCategoryForEquipment用の「機材名→カテゴリ名」索引キャッシュ。
@@ -1994,6 +2028,66 @@
     return d;
   }
 
+  // 【2026/9/17追加】月移動ボタンの一覧。今日を基準に、過去12か月〜先18か月分を
+  // 用意しておく（それより先・過去は「今日」ボタンで戻ってから、必要なら日付を
+  // 個別に調整する運用を想定。機材の予約管理では通常この範囲で十分なため）。
+  function ganttBuildMonthList_() {
+    var base = new Date();
+    base.setDate(1);
+    base.setHours(0, 0, 0, 0);
+    var list = [];
+    for (var i = -12; i <= 18; i++) {
+      list.push(new Date(base.getFullYear(), base.getMonth() + i, 1));
+    }
+    return list;
+  }
+
+  // 【2026/9/17追加】月移動ボタンの一覧表示。タップして初めて選べる月が見える
+  // ピッカー方式ではなく、最初から月のボタンを横一列に並べておき、入りきらない
+  // 月はこの行自体を指でスライドすれば見られるようにした（ボタンは初回だけ作り、
+  // 再描画のたびには作り直さない。ハイライトと表示位置だけ毎回更新する）。
+  function renderGanttMonthStrip_() {
+    var strip = document.getElementById('gantt-month-strip');
+    if (!strip) return;
+    if (!ganttMonthList_) ganttMonthList_ = ganttBuildMonthList_();
+
+    if (!strip.dataset.built) {
+      var frag = document.createDocumentFragment();
+      for (var i = 0; i < ganttMonthList_.length; i++) {
+        var d = ganttMonthList_[i];
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'gantt-month-chip';
+        btn.textContent = d.getFullYear() + '年' + (d.getMonth() + 1) + '月';
+        btn.dataset.y = d.getFullYear();
+        btn.dataset.m = d.getMonth();
+        btn.addEventListener('click', function () {
+          var nd = new Date(parseInt(this.dataset.y, 10), parseInt(this.dataset.m, 10), 1);
+          nd.setHours(0, 0, 0, 0);
+          ganttWindowStart = nd;
+          renderGanttView();
+        });
+        frag.appendChild(btn);
+      }
+      strip.appendChild(frag);
+      strip.dataset.built = '1';
+    }
+
+    var base = ganttWindowStart || ganttDefaultWindowStart_();
+    var activeY = base.getFullYear();
+    var activeM = base.getMonth();
+    var chips = strip.querySelectorAll('.gantt-month-chip');
+    var activeChip = null;
+    for (var j = 0; j < chips.length; j++) {
+      var isActive = (parseInt(chips[j].dataset.y, 10) === activeY && parseInt(chips[j].dataset.m, 10) === activeM);
+      chips[j].classList.toggle('active', isActive);
+      if (isActive) activeChip = chips[j];
+    }
+    if (activeChip) {
+      activeChip.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }
+
   // 【2026/9/16追加】予約の帯にカーソルを合わせたときの詳細吹き出し。
   // GANTT_TOOLTIP_DELAY_MSで指定した時間だけホバーが続いたら表示する
   // （ホバーをやめたら即座に消し、タイマーもキャンセルする）。
@@ -2100,6 +2194,10 @@
       if (ev.pointerType === 'touch') return; // タッチは下のTouchイベント側で処理する
       var label = ev.target.closest && ev.target.closest('.gantt-row-label');
       if (!label) return;
+      // 【2026/9/17修正】これを入れないと、ドラッグ開始と同時にブラウザ標準の
+      // 文字列選択が始まってしまい、PCのマウスドラッグでは機材名がスライド
+      // しないという不具合があった。
+      ev.preventDefault();
       ganttNameDrag_ = { id: 'mouse', startX: ev.clientX, startScrollX: ganttNameScrollX, moved: false };
     });
     scrollEl.addEventListener('pointermove', function (ev) {
@@ -2260,6 +2358,7 @@
 
     document.getElementById('gantt-range-label').textContent =
       formatDateStr(days[0]) + ' 〜 ' + formatDateStr(days[days.length - 1]);
+    renderGanttMonthStrip_();
 
     // 表示期間内の予約だけを、機材名ごとにまとめておく。
     var byEquipment = {};
@@ -4986,16 +5085,12 @@
   // （ページ内で1回だけ仕込めばよい。#gantt-scroll自体は再描画で消えない）。
   setupGanttNameDrag_();
   // 【2026/9/12追加】アプリ内ガントチャートの表示期間ナビゲーション。
-  document.getElementById('gantt-nav-prev').addEventListener('click', function () {
-    if (!ganttWindowStart) ganttWindowStart = ganttDefaultWindowStart_();
-    ganttWindowStart.setDate(ganttWindowStart.getDate() - 30);
-    renderGanttView();
-  });
-  document.getElementById('gantt-nav-next').addEventListener('click', function () {
-    if (!ganttWindowStart) ganttWindowStart = ganttDefaultWindowStart_();
-    ganttWindowStart.setDate(ganttWindowStart.getDate() + 30);
-    renderGanttView();
-  });
+  // 【2026/9/17修正】「前」「次」ボタン（30日ずつ移動）を廃止した。
+  // 【2026/9/17修正 その2】タップして開く月選択ピッカー（input type="month"）も、
+  // 選べる月がタップするまで見えないため分かりにくいという指摘があり、廃止。
+  // 代わりに月のボタンを最初から横一列に並べて表示し（renderGanttMonthStrip_、
+  // 呼び出しはrenderGanttViewInner_の中）、入りきらない月はこの行自体を
+  // 指でスライドすれば見られるようにした。
   document.getElementById('gantt-nav-today').addEventListener('click', function () {
     ganttWindowStart = ganttDefaultWindowStart_();
     renderGanttView();
