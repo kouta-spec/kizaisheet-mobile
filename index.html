@@ -212,14 +212,24 @@
   .gantt-grid { display: grid; position: relative; width: max-content; }
   /* 【2026/9/13修正】機材名が長いと、固定幅の列を広げるかガントチャート本体を
      隠すかの二択になってしまっていた。列の幅（GANTT_LABEL_WIDTH）は変えずに、
-     機材名の部分だけを縦方向の中で独立して左右にスワイプ・スクロールできるように
-     し、長い名前も列を広げずに読めるようにした。あわせて、カテゴリ名も小さく
-     上段に表示する。 */
+     機材名の部分だけを左右にスワイプして読めるようにした。あわせて、カテゴリ名も
+     小さく上段に表示する。
+     【2026/9/14修正】行ごとに独立したoverflow-x:autoでスクロールさせる方式は、
+     このセル自体が横スクロール可能な親（.gantt-scroll）の中に乗っている
+     （sticky配置）ため、実機のタッチ操作では「どちらの横スクロールが反応するか」が
+     端末によって不安定で、まとめて連動させるつもりのJS（scrollLeftを揃えるだけの
+     処理）が実際には効かないことがあると分かった。そこで、ブラウザ標準の横
+     スクロールには頼らず、指でドラッグした量をJSで直接読み取り、全行の文字に
+     同時にtransform（translateX）をかける自前の実装に変更した（実際の処理は
+     setupGanttNameDrag_/applyGanttNameScrollX_を参照）。 */
   .gantt-row-label {
     position: sticky; left: 0; z-index: 2; background: #fff;
     display: flex; flex-direction: column; justify-content: center; padding: 3px 8px;
     border-bottom: 1px solid #f0f0f0; border-right: 1px solid var(--border);
     overflow: hidden;
+    /* 縦方向のスクロール（ガントチャート全体を上下に見る操作）はこれまで通り
+       ブラウザ標準の動きに任せつつ、横方向のドラッグだけは自前のJSに渡す。 */
+    touch-action: pan-y;
   }
   .grl-cat {
     font-size: 9.5px; color: var(--sub); font-weight: 700; line-height: 1.2;
@@ -227,9 +237,9 @@
   }
   .grl-name {
     font-size: 12px; color: var(--text); font-weight: 600; line-height: 1.25;
-    white-space: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    white-space: nowrap; overflow: hidden; position: relative;
   }
-  .grl-name::-webkit-scrollbar { display: none; }
+  .grl-name-text { display: inline-block; white-space: nowrap; will-change: transform; }
   .gantt-head-cell {
     position: sticky; top: 0; z-index: 1; background: #fbfbfd;
     display: flex; align-items: center; justify-content: center;
@@ -1019,7 +1029,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-13c';
+  var APP_BUILD_VERSION = '2026-09-14a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1054,6 +1064,11 @@
   // 【2026/9/13修正】機材名の行にカテゴリ名も小さく表示するようになったため、
   // 2段分の高さが収まるよう少しだけ高さを増やした。
   var GANTT_ROW_HEIGHT = 38;
+  // 【2026/9/14追加】機材名欄をまとめて左右にスワイプするための、現在の共通
+  // スクロール量（px、0＝各行とも名前の先頭を表示）。ドラッグ中の状態は
+  // ganttNameDrag_（setupGanttNameDrag_内でのみ使用）。
+  var ganttNameScrollX = 0;
+  var ganttNameDrag_ = null;
   var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
   var categoryOrder = [];
   // 【2026/9/4追加】findCategoryForEquipment用の「機材名→カテゴリ名」索引キャッシュ。
@@ -1944,17 +1959,70 @@
     return d;
   }
 
-  // 【2026/9/13修正】機材名欄（.grl-name、行ごとに独立して左右スクロールできる
-  // 内側の要素）は、以前は行ごとにバラバラにスクロール位置がずれてしまっていた。
-  // どこか1行をスワイプしたら、表示中の他のすべての行も同じスクロール位置に
-  // 揃える（frag内でまとめて作るのではなく、実際にDOMに入っている要素だけを
-  // 対象にする＝querySelectorAllでその都度取得）。
-  function syncGanttNameScroll_(sourceEl) {
-    var x = sourceEl.scrollLeft;
-    var all = document.querySelectorAll('.grl-name');
-    for (var i = 0; i < all.length; i++) {
-      if (all[i] !== sourceEl && all[i].scrollLeft !== x) all[i].scrollLeft = x;
+  // 【2026/9/14修正】以前はブラウザ標準の横スクロール（overflow-x: auto）を
+  // 行ごとに効かせ、scrollLeftをJSで揃える方式にしていたが、この欄自体が
+  // 横スクロール可能な親（.gantt-scroll）の上にsticky配置で乗っているため、
+  // 実機のタッチでは「親と子、どちらの横スクロールに指のドラッグが渡るか」が
+  // 不安定で、揃えるはずのJSが効かない（＝そもそも行ごとのスクロール自体が
+  // ブラウザ側でうまく発生しない）ことがあると分かった。
+  // そこで、ブラウザの横スクロールには頼らず、指のドラッグ量をJSで直接読み取り、
+  // 全行の文字にtransform（translateX）を同時にかける自前実装に変更した。
+  // ・ganttNameRowMax_: その行の文字が、列の幅からどれだけはみ出しているか（px）
+  // ・applyGanttNameScrollX_: 現在の共通スクロール量（ganttNameScrollX）を、
+  //   はみ出し量でその行ごとにクランプしたうえで、実際に画面へ反映する
+  // ・setupGanttNameDrag_: 機材名欄のどこかを指でドラッグしたときに
+  //   ganttNameScrollXを更新し、applyGanttNameScrollX_を呼ぶ（1回だけ設定すればよい）
+  function ganttNameRowMax_(wrapEl) {
+    var textEl = wrapEl.firstChild;
+    if (!textEl) return 0;
+    var max = textEl.scrollWidth - wrapEl.clientWidth;
+    return max > 0 ? max : 0;
+  }
+
+  function applyGanttNameScrollX_() {
+    var wraps = document.querySelectorAll('.grl-name');
+    var overallMax = 0;
+    for (var i = 0; i < wraps.length; i++) {
+      var m = ganttNameRowMax_(wraps[i]);
+      if (m > overallMax) overallMax = m;
     }
+    if (ganttNameScrollX > overallMax) ganttNameScrollX = overallMax;
+    if (ganttNameScrollX < 0) ganttNameScrollX = 0;
+    for (var j = 0; j < wraps.length; j++) {
+      var wrap = wraps[j];
+      var textEl = wrap.firstChild;
+      if (!textEl) continue;
+      var x = Math.min(ganttNameScrollX, ganttNameRowMax_(wrap));
+      textEl.style.transform = 'translateX(-' + x + 'px)';
+    }
+  }
+
+  // 【2026/9/14追加】ページ内で1回だけ呼び出し、ガントチャート内の機材名欄の
+  // ドラッグ操作を仕込む（描画のたびに呼び直す必要はない。#gantt-scroll自体は
+  // 再描画されても消えずに残る要素のため）。
+  function setupGanttNameDrag_() {
+    var scrollEl = document.getElementById('gantt-scroll');
+    if (!scrollEl) return;
+    scrollEl.addEventListener('pointerdown', function (ev) {
+      var label = ev.target.closest && ev.target.closest('.gantt-row-label');
+      if (!label) return;
+      ganttNameDrag_ = { pointerId: ev.pointerId, startX: ev.clientX, startScrollX: ganttNameScrollX, moved: false };
+    });
+    scrollEl.addEventListener('pointermove', function (ev) {
+      if (!ganttNameDrag_ || ganttNameDrag_.pointerId !== ev.pointerId) return;
+      var dx = ev.clientX - ganttNameDrag_.startX;
+      if (!ganttNameDrag_.moved && Math.abs(dx) < 4) return; // 指の小さなブレでは反応させない
+      ganttNameDrag_.moved = true;
+      ganttNameScrollX = ganttNameDrag_.startScrollX - dx;
+      applyGanttNameScrollX_();
+      ev.preventDefault();
+    });
+    function endDrag(ev) {
+      if (!ganttNameDrag_ || ganttNameDrag_.pointerId !== ev.pointerId) return;
+      ganttNameDrag_ = null;
+    }
+    scrollEl.addEventListener('pointerup', endDrag);
+    scrollEl.addEventListener('pointercancel', endDrag);
   }
 
   // 【2026/9/13修正】作品名と色マークの凡例は廃止し、代わりに「機材カテゴリー」の
@@ -2092,18 +2160,18 @@
 
       // 【2026/9/13修正】上段に小さくカテゴリ名、下段に機材名を表示する。
       // 列の幅（GANTT_LABEL_WIDTH）は変えず、機材名が長い場合はこの内側だけを
-      // 左右にスワイプしてスクロールできるようにする（.grl-nameのoverflow-x:auto）。
+      // 左右にスワイプして読めるようにする（実際のドラッグ処理は
+      // setupGanttNameDrag_/applyGanttNameScrollX_を参照。全行が連動して動く）。
       var catLine = document.createElement('div');
       catLine.className = 'grl-cat';
       catLine.textContent = findCategoryForEquipment(name) || '';
 
       var nameLine = document.createElement('div');
       nameLine.className = 'grl-name';
-      nameLine.textContent = name;
-      // 【2026/9/13修正】機材名欄の横スクロールが行ごとにバラバラだと、どこまで
-      // スクロールしたか分からなくなるとの指摘があったため、どこか1行をスワイプ
-      // すると、他のすべての行も同じ位置まで一緒にスクロールするようにする。
-      nameLine.addEventListener('scroll', function () { syncGanttNameScroll_(this); });
+      var nameText = document.createElement('span');
+      nameText.className = 'grl-name-text';
+      nameText.textContent = name;
+      nameLine.appendChild(nameText);
 
       label.appendChild(catLine);
       label.appendChild(nameLine);
@@ -2132,6 +2200,8 @@
     });
 
     gridEl.appendChild(frag);
+    // 機材名欄の横スクロール位置（ganttNameScrollX）を、再描画後の新しい行にも反映する。
+    applyGanttNameScrollX_();
 
     // 初回表示時は「今日」がだいたい見える位置まで横スクロールしておく。
     var todayIdx = -1;
@@ -4341,6 +4411,8 @@
       ganttProjectColors = {};
       ganttHolidays = [];
       ganttWindowStart = null;
+      ganttNameScrollX = 0;
+      ganttNameDrag_ = null;
 
       document.getElementById('settings-url').value = '';
       document.getElementById('settings-token').value = '';
@@ -4742,6 +4814,9 @@
     btn.addEventListener('click', function () { switchView(btn.dataset.view); });
   });
   document.getElementById('gantt-refresh-btn').addEventListener('click', refreshGanttChart);
+  // 【2026/9/14追加】機材名欄をまとめてドラッグでスクロールできるようにする
+  // （ページ内で1回だけ仕込めばよい。#gantt-scroll自体は再描画で消えない）。
+  setupGanttNameDrag_();
   // 【2026/9/12追加】アプリ内ガントチャートの表示期間ナビゲーション。
   document.getElementById('gantt-nav-prev').addEventListener('click', function () {
     if (!ganttWindowStart) ganttWindowStart = ganttDefaultWindowStart_();
