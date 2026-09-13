@@ -193,22 +193,43 @@
   .gantt-nav-btn:active { transform: scale(0.96); }
   .gantt-nav-today { color: var(--blue-dark); background: var(--tint); }
   .gantt-range-label { flex: 1; text-align: center; font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; }
-  .gantt-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 14px 8px; font-size: 11.5px; color: var(--sub); }
-  .gantt-legend .lg-item { display: flex; align-items: center; gap: 5px; max-width: 46vw; }
-  .gantt-legend .lg-dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-  .gantt-legend .lg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 【2026/9/13追加】作品名の凡例（色マーク）は廃止し、代わりに機材カテゴリーへ
+     ジャンプするショートカットボタンの並びにした。ボタンが多いときは横スクロール
+     できるようにする。 */
+  .gantt-cat-shortcuts { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0 14px 8px; }
+  .gantt-cat-shortcuts::-webkit-scrollbar { display: none; }
+  .gantt-cat-btn {
+    flex: none; border: 1px solid var(--border); background: #fff; color: var(--blue-dark);
+    font-size: 11.5px; font-weight: 700; padding: 6px 12px; border-radius: 20px;
+    white-space: nowrap; cursor: pointer;
+  }
+  .gantt-cat-btn:active { transform: scale(0.95); }
   .gantt-scroll {
     overflow: auto; -webkit-overflow-scrolling: touch;
     max-height: calc(100vh - 300px); border-top: 1px solid var(--border);
     background: #fff;
   }
   .gantt-grid { display: grid; position: relative; width: max-content; }
+  /* 【2026/9/13修正】機材名が長いと、固定幅の列を広げるかガントチャート本体を
+     隠すかの二択になってしまっていた。列の幅（GANTT_LABEL_WIDTH）は変えずに、
+     機材名の部分だけを縦方向の中で独立して左右にスワイプ・スクロールできるように
+     し、長い名前も列を広げずに読めるようにした。あわせて、カテゴリ名も小さく
+     上段に表示する。 */
   .gantt-row-label {
     position: sticky; left: 0; z-index: 2; background: #fff;
-    display: flex; align-items: center; padding: 0 8px;
-    font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; flex-direction: column; justify-content: center; padding: 3px 8px;
     border-bottom: 1px solid #f0f0f0; border-right: 1px solid var(--border);
+    overflow: hidden;
   }
+  .grl-cat {
+    font-size: 9.5px; color: var(--sub); font-weight: 700; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .grl-name {
+    font-size: 12px; color: var(--text); font-weight: 600; line-height: 1.25;
+    white-space: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  .grl-name::-webkit-scrollbar { display: none; }
   .gantt-head-cell {
     position: sticky; top: 0; z-index: 1; background: #fbfbfd;
     display: flex; align-items: center; justify-content: center;
@@ -748,7 +769,7 @@
       <button type="button" id="gantt-nav-next" class="gantt-nav-btn">次 ▶</button>
       <button type="button" id="gantt-nav-today" class="gantt-nav-btn gantt-nav-today">今日</button>
     </div>
-    <div id="gantt-legend" class="gantt-legend"></div>
+    <div id="gantt-cat-shortcuts" class="gantt-cat-shortcuts"></div>
     <div id="gantt-scroll" class="gantt-scroll">
       <div id="gantt-grid" class="gantt-grid"></div>
     </div>
@@ -998,7 +1019,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-13a';
+  var APP_BUILD_VERSION = '2026-09-13b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1030,7 +1051,9 @@
   var GANTT_WINDOW_DAYS = 45;
   var GANTT_DAY_WIDTH = 28;
   var GANTT_LABEL_WIDTH = 108;
-  var GANTT_ROW_HEIGHT = 34;
+  // 【2026/9/13修正】機材名の行にカテゴリ名も小さく表示するようになったため、
+  // 2段分の高さが収まるよう少しだけ高さを増やした。
+  var GANTT_ROW_HEIGHT = 38;
   var equipmentByCategory = {}; // カテゴリ名 -> 機材名の配列
   var categoryOrder = [];
   // 【2026/9/4追加】findCategoryForEquipment用の「機材名→カテゴリ名」索引キャッシュ。
@@ -1921,21 +1944,30 @@
     return d;
   }
 
-  function renderGanttLegend_(names) {
-    var legendEl = document.getElementById('gantt-legend');
-    legendEl.innerHTML = '';
-    names.forEach(function (name) {
-      var item = document.createElement('span');
-      item.className = 'lg-item';
-      var dot = document.createElement('span');
-      dot.className = 'lg-dot';
-      dot.style.background = ganttProjectColors[name] || '#4361ee';
-      var label = document.createElement('span');
-      label.className = 'lg-name';
-      label.textContent = name;
-      item.appendChild(dot);
-      item.appendChild(label);
-      legendEl.appendChild(item);
+  // 【2026/9/13修正】作品名と色マークの凡例は廃止し、代わりに「機材カテゴリー」の
+  // ショートカットボタンを表示する。タップすると、そのカテゴリの最初の機材行まで
+  // 縦方向にスクロールする（マスターガントチャートの並び順＝rowsの並び順の中で、
+  // そのカテゴリが最初に出てくる行を探す）。
+  function renderGanttCategoryShortcuts_(scrollEl, rows) {
+    var wrap = document.getElementById('gantt-cat-shortcuts');
+    wrap.innerHTML = '';
+    var seen = {};
+    rows.forEach(function (name, rowIdx) {
+      var cat = findCategoryForEquipment(name) || '（未分類）';
+      if (seen[cat]) return;
+      seen[cat] = true;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'gantt-cat-btn';
+      btn.textContent = cat;
+      btn.addEventListener('click', function () {
+        try {
+          scrollEl.scrollTo({ top: rowIdx * GANTT_ROW_HEIGHT, left: scrollEl.scrollLeft, behavior: 'smooth' });
+        } catch (e) {
+          scrollEl.scrollTop = rowIdx * GANTT_ROW_HEIGHT; // scrollTo未対応の古い環境向けの保険
+        }
+      });
+      wrap.appendChild(btn);
     });
   }
 
@@ -1946,7 +1978,7 @@
 
     if (!dataLoaded.bookings || !dataLoaded.ganttData) {
       gridEl.innerHTML = '';
-      document.getElementById('gantt-legend').innerHTML = '';
+      document.getElementById('gantt-cat-shortcuts').innerHTML = '';
       renderEmptyState(emptyEl, false, '');
       return;
     }
@@ -1954,7 +1986,7 @@
     var rows = ganttEquipmentOrder;
     if (!rows.length) {
       gridEl.innerHTML = '';
-      document.getElementById('gantt-legend').innerHTML = '';
+      document.getElementById('gantt-cat-shortcuts').innerHTML = '';
       renderEmptyState(emptyEl, true, 'マスターガントチャートに機材が登録されていません');
       return;
     }
@@ -1968,7 +2000,7 @@
       renderGanttViewInner_(scrollEl, gridEl, rows);
     } catch (err) {
       gridEl.innerHTML = '';
-      document.getElementById('gantt-legend').innerHTML = '';
+      document.getElementById('gantt-cat-shortcuts').innerHTML = '';
       renderEmptyState(emptyEl, true, 'ガントチャートの表示に失敗しました: ' + err.message);
     }
   }
@@ -1994,11 +2026,8 @@
     document.getElementById('gantt-range-label').textContent =
       formatDateStr(days[0]) + ' 〜 ' + formatDateStr(days[days.length - 1]);
 
-    // 表示期間内の予約だけを、機材名ごとにまとめておく（表示中の作品名の一覧も
-    // ここで拾って、凡例に出す）。
+    // 表示期間内の予約だけを、機材名ごとにまとめておく。
     var byEquipment = {};
-    var visibleProjectNames = [];
-    var seenProjectNames = {};
     (Array.isArray(bookings) ? bookings : []).forEach(function (b) {
       if (!b.equipment) return;
       var bStart = parseSlashDateParts_(b.startDate);
@@ -2009,9 +2038,10 @@
       if (bEndTime < windowStartTime || bStartTime > windowEndTime) return;
       var key = String(b.equipment).trim();
       (byEquipment[key] = byEquipment[key] || []).push({ b: b, startTime: bStartTime, endTime: bEndTime });
-      if (b.project && !seenProjectNames[b.project]) { seenProjectNames[b.project] = true; visibleProjectNames.push(b.project); }
     });
-    renderGanttLegend_(visibleProjectNames);
+    // 【2026/9/13修正】作品名の凡例（色マーク）は廃止し、機材カテゴリーの
+    // ショートカットボタンに差し替えた。
+    renderGanttCategoryShortcuts_(scrollEl, rows);
 
     gridEl.style.gridTemplateColumns = GANTT_LABEL_WIDTH + 'px repeat(' + days.length + ', ' + GANTT_DAY_WIDTH + 'px)';
     gridEl.style.gridTemplateRows = 'repeat(' + (rows.length + 1) + ', ' + GANTT_ROW_HEIGHT + 'px)';
@@ -2045,8 +2075,21 @@
       label.className = 'gantt-row-label';
       label.style.gridColumn = '1';
       label.style.gridRow = String(gridRow);
-      label.textContent = name;
       label.title = name;
+
+      // 【2026/9/13修正】上段に小さくカテゴリ名、下段に機材名を表示する。
+      // 列の幅（GANTT_LABEL_WIDTH）は変えず、機材名が長い場合はこの内側だけを
+      // 左右にスワイプしてスクロールできるようにする（.grl-nameのoverflow-x:auto）。
+      var catLine = document.createElement('div');
+      catLine.className = 'grl-cat';
+      catLine.textContent = findCategoryForEquipment(name) || '';
+
+      var nameLine = document.createElement('div');
+      nameLine.className = 'grl-name';
+      nameLine.textContent = name;
+
+      label.appendChild(catLine);
+      label.appendChild(nameLine);
       frag.appendChild(label);
 
       var track = document.createElement('div');
