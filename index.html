@@ -1019,7 +1019,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-13b';
+  var APP_BUILD_VERSION = '2026-09-13c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1944,6 +1944,19 @@
     return d;
   }
 
+  // 【2026/9/13修正】機材名欄（.grl-name、行ごとに独立して左右スクロールできる
+  // 内側の要素）は、以前は行ごとにバラバラにスクロール位置がずれてしまっていた。
+  // どこか1行をスワイプしたら、表示中の他のすべての行も同じスクロール位置に
+  // 揃える（frag内でまとめて作るのではなく、実際にDOMに入っている要素だけを
+  // 対象にする＝querySelectorAllでその都度取得）。
+  function syncGanttNameScroll_(sourceEl) {
+    var x = sourceEl.scrollLeft;
+    var all = document.querySelectorAll('.grl-name');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i] !== sourceEl && all[i].scrollLeft !== x) all[i].scrollLeft = x;
+    }
+  }
+
   // 【2026/9/13修正】作品名と色マークの凡例は廃止し、代わりに「機材カテゴリー」の
   // ショートカットボタンを表示する。タップすると、そのカテゴリの最初の機材行まで
   // 縦方向にスクロールする（マスターガントチャートの並び順＝rowsの並び順の中で、
@@ -2087,6 +2100,10 @@
       var nameLine = document.createElement('div');
       nameLine.className = 'grl-name';
       nameLine.textContent = name;
+      // 【2026/9/13修正】機材名欄の横スクロールが行ごとにバラバラだと、どこまで
+      // スクロールしたか分からなくなるとの指摘があったため、どこか1行をスワイプ
+      // すると、他のすべての行も同じ位置まで一緒にスクロールするようにする。
+      nameLine.addEventListener('scroll', function () { syncGanttNameScroll_(this); });
 
       label.appendChild(catLine);
       label.appendChild(nameLine);
