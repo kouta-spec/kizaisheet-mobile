@@ -81,6 +81,15 @@
     border-radius: 0 0 20px 20px;
     box-shadow: 0 6px 16px rgba(67, 97, 238, 0.28);
   }
+  /* 【2026/9/18追加】横向き＋ガントチャート表示中は、これまでロゴ付きの
+     ヘッダー分だけ表の行が少なく見えていた（下へ1回スクロールしてヘッダーが
+     隠れると、その分だけ多く見えるようになっていた）。毎回手でスクロールしなくても
+     最初からその「隠れた後」の表示になるよう、この組み合わせのときはヘッダー
+     そのものを表示しない（タブの並びがそのまま画面の一番上に来る）。設定・更新
+     ボタンは、他のタブに切り替えれば今まで通り使える。
+     class名（gantt-landscape-compact）はupdateGanttLandscapeCompact_()が
+     付け外しする。 */
+  body.gantt-landscape-compact header { display: none; }
   /* 【2026/8/29追加】ヘッダーにアプリのアイコンロゴ（icon-192.png、ホーム画面の
      ショートカットアイコンと同じ画像）を表示したいとの要望に対応。タイトル文字と
      まとめて1つの中央配置グループにするため、直接のグリッド子要素はこの
@@ -1132,7 +1141,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-18b';
+  var APP_BUILD_VERSION = '2026-09-18c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1613,6 +1622,16 @@
     scrollEl.style.maxHeight = available + 'px';
   }
 
+  // 【2026/9/18追加】横向き＋ガントチャート表示中だけ、ロゴ付きヘッダーを隠して
+  // タブの並びを画面の一番上に来るようにする（CSS側の
+  // body.gantt-landscape-compact header{display:none}参照）。縦向きに戻したり
+  // 他のタブに切り替えたりしたら、今まで通りヘッダーを表示する。
+  function updateGanttLandscapeCompact_() {
+    var isLandscape = window.matchMedia('(orientation: landscape)').matches;
+    var compact = isLandscape && currentView === 'gantt';
+    document.body.classList.toggle('gantt-landscape-compact', compact);
+  }
+
   // ---------- タブ切り替え ----------
   function switchView(view) {
     currentView = view;
@@ -1627,11 +1646,13 @@
     document.querySelector('.search-bar').style.display = isGantt ? 'none' : '';
     document.getElementById('list').style.display = isGantt ? 'none' : '';
     document.getElementById('gantt-view').style.display = isGantt ? 'block' : 'none';
+    updateGanttLandscapeCompact_();
     if (isGantt) {
       document.getElementById('empty').style.display = 'none';
       document.getElementById('summary-bar').style.display = 'none';
       // display:noneのままだとgetBoundingClientRect()が正しく測れないため、
-      // 表示に切り替えたあと（描画後）に高さを合わせ直す。
+      // 表示に切り替えたあと（描画後、ヘッダーの表示・非表示が確定したあと）に
+      // 高さを合わせ直す。
       requestAnimationFrame(adjustGanttScrollHeight_);
     }
     renderCurrentView();
@@ -5251,10 +5272,12 @@
   // 測り直す。回転直後はブラウザによって実際の画面サイズがまだ更新されて
   // いないことがあるため、少し時間を置いてからもう一度測り直す。
   window.addEventListener('resize', function () {
+    updateGanttLandscapeCompact_();
     if (currentView === 'gantt') adjustGanttScrollHeight_();
   });
   window.addEventListener('orientationchange', function () {
     setTimeout(function () {
+      updateGanttLandscapeCompact_();
       if (currentView === 'gantt') adjustGanttScrollHeight_();
     }, 300);
   });
