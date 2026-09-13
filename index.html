@@ -998,7 +998,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-12a';
+  var APP_BUILD_VERSION = '2026-09-13a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1960,7 +1960,26 @@
     }
     emptyEl.style.display = 'none';
 
+    // 【2026/9/13追加】この先で予期しないデータ形式などにより例外が起きると、
+    // 何も表示されないまま画面が真っ白（実際には空欄）になってしまい、
+    // 何が起きているか分からなくなる。try/catchで囲み、失敗した場合は
+    // エラー内容をそのまま画面に表示する（原因調査・問い合わせがしやすいように）。
+    try {
+      renderGanttViewInner_(scrollEl, gridEl, rows);
+    } catch (err) {
+      gridEl.innerHTML = '';
+      document.getElementById('gantt-legend').innerHTML = '';
+      renderEmptyState(emptyEl, true, 'ガントチャートの表示に失敗しました: ' + err.message);
+    }
+  }
+
+  function renderGanttViewInner_(scrollEl, gridEl, rows) {
     if (!ganttWindowStart) ganttWindowStart = ganttDefaultWindowStart_();
+    // 前回までに壊れた形式のデータがキャッシュに残っている可能性に備え、
+    // 配列であることを保証してから使う。
+    if (!Array.isArray(ganttHolidays)) ganttHolidays = [];
+    if (!Array.isArray(rows)) rows = [];
+    if (!ganttProjectColors || typeof ganttProjectColors !== 'object') ganttProjectColors = {};
 
     var days = [];
     for (var i = 0; i < GANTT_WINDOW_DAYS; i++) {
@@ -1980,7 +1999,7 @@
     var byEquipment = {};
     var visibleProjectNames = [];
     var seenProjectNames = {};
-    bookings.forEach(function (b) {
+    (Array.isArray(bookings) ? bookings : []).forEach(function (b) {
       if (!b.equipment) return;
       var bStart = parseSlashDateParts_(b.startDate);
       var bEnd = parseSlashDateParts_(b.endDate);
@@ -4253,7 +4272,15 @@
       supplierList = [];
       projectList = [];
       mobileAllowedProjects = null;
-      dataLoaded = { equipment: false, bookings: false };
+      dataLoaded = { equipment: false, bookings: false, ganttData: false };
+      // 【2026/9/13追加】ガントチャートタブ用データも、接続解除時に一緒にリセットする
+      // （このリセットが漏れていたため、dataLoadedを丸ごと作り直す際にganttDataの
+      // キーが消えてしまっていた不具合を修正）。
+      try { localStorage.removeItem('kizai_gantt_data_cache_v1'); } catch (e) { /* 無視 */ }
+      ganttEquipmentOrder = [];
+      ganttProjectColors = {};
+      ganttHolidays = [];
+      ganttWindowStart = null;
 
       document.getElementById('settings-url').value = '';
       document.getElementById('settings-token').value = '';
