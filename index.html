@@ -1029,7 +1029,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-14c';
+  var APP_BUILD_VERSION = '2026-09-15a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2027,29 +2027,79 @@
   // 【2026/9/14追加】ページ内で1回だけ呼び出し、ガントチャート内の機材名欄の
   // ドラッグ操作を仕込む（描画のたびに呼び直す必要はない。#gantt-scroll自体は
   // 再描画されても消えずに残る要素のため）。
+  // 【2026/9/15修正】以前はPointer Eventsの touch-action:pan-y に頼っていたが、
+  // 指が機材名欄（幅108pxの狭い列）からガントチャート本体側にはみ出すと、そこから
+  // 先はブラウザ標準の横スクロール扱いに切り替わってしまい、機材名のスライドが
+  // 途中で止まって見える、という指摘があった。
+  // タッチ操作については、指がどこまで移動しても同じ指（touch識別子）である限り
+  // 機材名のスライドを継続してほしいとのことなので、ブラウザの既定動作に左右され
+  // やすいPointer Eventsではなく、生のTouchイベントをpassive:falseで直接扱い、
+  // touchmoveのpreventDefault()で既定のスクロールそのものを起こさせない方式にした
+  // （こうすることで、指の位置が機材名欄の外＝ガントチャート本体の上にあっても、
+  // 最初にラベル欄で始めた指と同じ指である限りスライドし続ける）。
+  // マウス操作（PCでの動作確認用）は従来通りPointer Eventsで扱う。
   function setupGanttNameDrag_() {
     var scrollEl = document.getElementById('gantt-scroll');
     if (!scrollEl) return;
+
+    // ---- マウス（PC）用：Pointer Events ----
     scrollEl.addEventListener('pointerdown', function (ev) {
+      if (ev.pointerType === 'touch') return; // タッチは下のTouchイベント側で処理する
       var label = ev.target.closest && ev.target.closest('.gantt-row-label');
       if (!label) return;
-      ganttNameDrag_ = { pointerId: ev.pointerId, startX: ev.clientX, startScrollX: ganttNameScrollX, moved: false };
+      ganttNameDrag_ = { id: 'mouse', startX: ev.clientX, startScrollX: ganttNameScrollX, moved: false };
     });
     scrollEl.addEventListener('pointermove', function (ev) {
-      if (!ganttNameDrag_ || ganttNameDrag_.pointerId !== ev.pointerId) return;
-      var dx = ev.clientX - ganttNameDrag_.startX;
-      if (!ganttNameDrag_.moved && Math.abs(dx) < 4) return; // 指の小さなブレでは反応させない
-      ganttNameDrag_.moved = true;
-      ganttNameScrollX = ganttNameDrag_.startScrollX - dx;
-      scheduleApplyGanttNameScrollX_();
+      if (ev.pointerType === 'touch') return;
+      if (!ganttNameDrag_ || ganttNameDrag_.id !== 'mouse') return;
+      ganttNameDragMove_(ev.clientX);
       ev.preventDefault();
     });
-    function endDrag(ev) {
-      if (!ganttNameDrag_ || ganttNameDrag_.pointerId !== ev.pointerId) return;
-      ganttNameDrag_ = null;
+    function endMouseDrag(ev) {
+      if (ev.pointerType === 'touch') return;
+      if (ganttNameDrag_ && ganttNameDrag_.id === 'mouse') ganttNameDrag_ = null;
     }
-    scrollEl.addEventListener('pointerup', endDrag);
-    scrollEl.addEventListener('pointercancel', endDrag);
+    scrollEl.addEventListener('pointerup', endMouseDrag);
+    scrollEl.addEventListener('pointercancel', endMouseDrag);
+
+    // ---- スマホ（タッチ）用：Touch Events ----
+    scrollEl.addEventListener('touchstart', function (ev) {
+      var t = ev.changedTouches[0];
+      var label = t.target.closest && t.target.closest('.gantt-row-label');
+      if (!label) return;
+      ganttNameDrag_ = { id: t.identifier, startX: t.clientX, startScrollX: ganttNameScrollX, moved: false };
+    }, { passive: true });
+
+    scrollEl.addEventListener('touchmove', function (ev) {
+      if (!ganttNameDrag_ || ganttNameDrag_.id === 'mouse') return;
+      var t = null;
+      for (var i = 0; i < ev.changedTouches.length; i++) {
+        if (ev.changedTouches[i].identifier === ganttNameDrag_.id) { t = ev.changedTouches[i]; break; }
+      }
+      if (!t) return;
+      // 指が今どこにあるか（機材名欄の中かガントチャート本体の上か）は問わず、
+      // 最初にラベル欄でつかんだ指と同じ指である限りスライドを継続する。
+      ganttNameDragMove_(t.clientX);
+      ev.preventDefault();
+    }, { passive: false });
+
+    function endTouchDrag(ev) {
+      if (!ganttNameDrag_ || ganttNameDrag_.id === 'mouse') return;
+      for (var i = 0; i < ev.changedTouches.length; i++) {
+        if (ev.changedTouches[i].identifier === ganttNameDrag_.id) { ganttNameDrag_ = null; break; }
+      }
+    }
+    scrollEl.addEventListener('touchend', endTouchDrag);
+    scrollEl.addEventListener('touchcancel', endTouchDrag);
+  }
+
+  // マウス・タッチ共通のドラッグ量反映処理。
+  function ganttNameDragMove_(clientX) {
+    var dx = clientX - ganttNameDrag_.startX;
+    if (!ganttNameDrag_.moved && Math.abs(dx) < 4) return; // 指の小さなブレでは反応させない
+    ganttNameDrag_.moved = true;
+    ganttNameScrollX = ganttNameDrag_.startScrollX - dx;
+    scheduleApplyGanttNameScrollX_();
   }
 
   // 【2026/9/13修正】作品名と色マークの凡例は廃止し、代わりに「機材カテゴリー」の
