@@ -1029,7 +1029,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-15a';
+  var APP_BUILD_VERSION = '2026-09-16a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2067,7 +2067,10 @@
       var t = ev.changedTouches[0];
       var label = t.target.closest && t.target.closest('.gantt-row-label');
       if (!label) return;
-      ganttNameDrag_ = { id: t.identifier, startX: t.clientX, startScrollX: ganttNameScrollX, moved: false };
+      // 【2026/9/16追加】axis: この指の動きが横方向（機材名のスライド）か縦方向
+      // （ガントチャート全体を上下に見る操作）か、まだ判定していない状態(null)から
+      // 始める。最初の指の動きで判定する（下のtouchmove参照）。
+      ganttNameDrag_ = { id: t.identifier, startX: t.clientX, startY: t.clientY, startScrollX: ganttNameScrollX, moved: false, axis: null };
     }, { passive: true });
 
     scrollEl.addEventListener('touchmove', function (ev) {
@@ -2077,6 +2080,25 @@
         if (ev.changedTouches[i].identifier === ganttNameDrag_.id) { t = ev.changedTouches[i]; break; }
       }
       if (!t) return;
+
+      // 【2026/9/16追加】機材名欄で指が縦方向に動いたときは、機材名をスライドさせず、
+      // ガントチャート全体を上下に見るための標準のスクロールに任せる（preventDefault
+      // しない）。横方向に動いたときだけ、これまで通り機材名をスライドさせる。
+      // 一度どちらかに決まったら、指を離すまではその判定のままにする（斜めの動きの
+      // 途中で切り替わって暴れないように）。
+      if (ganttNameDrag_.axis === 'y') return;
+
+      if (ganttNameDrag_.axis === null) {
+        var initDx = t.clientX - ganttNameDrag_.startX;
+        var initDy = t.clientY - ganttNameDrag_.startY;
+        if (Math.abs(initDx) < 6 && Math.abs(initDy) < 6) return; // 指の小さなブレではまだ判定しない
+        if (Math.abs(initDy) > Math.abs(initDx)) {
+          ganttNameDrag_.axis = 'y';
+          return; // 縦方向と判定：ここでは何もしない（標準の縦スクロールに任せる）
+        }
+        ganttNameDrag_.axis = 'x';
+      }
+
       // 指が今どこにあるか（機材名欄の中かガントチャート本体の上か）は問わず、
       // 最初にラベル欄でつかんだ指と同じ指である限りスライドを継続する。
       ganttNameDragMove_(t.clientX);
