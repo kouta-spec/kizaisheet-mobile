@@ -1029,7 +1029,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-14b';
+  var APP_BUILD_VERSION = '2026-09-14c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2003,9 +2003,12 @@
     }
     if (ganttNameScrollX > overallMax) ganttNameScrollX = overallMax;
     if (ganttNameScrollX < 0) ganttNameScrollX = 0;
+    // 【2026/9/14修正】以前は行ごとに「はみ出し量」でクランプしていたため、名前が
+    // 短い行だけ他より早く止まって見えた。それが不要とのことなので、行ごとの
+    // クランプはやめ、全行に同じ量（ganttNameScrollX）をそのまま適用する
+    // （短い名前は、共通スクロール量がその行の文字幅を超えた時点で見えなくなる）。
     for (var j = 0; j < rows.length; j++) {
-      var x = ganttNameScrollX < rows[j].maxScroll ? ganttNameScrollX : rows[j].maxScroll;
-      rows[j].textEl.style.transform = 'translateX(-' + x + 'px)';
+      rows[j].textEl.style.transform = 'translateX(-' + ganttNameScrollX + 'px)';
     }
   }
 
