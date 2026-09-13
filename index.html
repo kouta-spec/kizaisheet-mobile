@@ -801,7 +801,16 @@
      @media自体は条件付きでも、元の定義より前に置くと（横向きであっても）
      元の定義の方が後勝ちで効いてしまい、意図した上書きにならない。 */
   @media (orientation: landscape) {
-    #app { max-width: min(1100px, 100%); }
+    /* 【2026/9/18再修正】1100pxで頭打ちにしていたが、画面幅がそれより広い
+       タブレットなどでは左右にまた余白ができてしまうとの指摘があったため、
+       上限を設けず画面幅いっぱいまで使うようにした。あわせて、横向きだと
+       ノッチ（切り欠き）が画面の左右に来る端末があるため、その分だけ
+       左右にpaddingを入れて、内容がノッチの裏に隠れないようにする。 */
+    #app {
+      max-width: 100%;
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
     header { padding: calc(env(safe-area-inset-top) + 6px) 18px 8px; }
     header h1 { font-size: 16px; }
     .header-logo { width: 22px; height: 22px; }
@@ -1141,7 +1150,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-18c';
+  var APP_BUILD_VERSION = '2026-09-18d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1613,13 +1622,25 @@
   // 画面の下までしっかり見えるようになる（横向きにすると画面自体の高さが
   // 小さくなるため、固定のpx数を引くだけでは行がほとんど見えなくなって
   // しまっていた）。
+  // 【2026/9/18再修正】スマホの実機（特にiPhoneのSafari）では、横向きにした
+  // 直後はアドレスバーなどのブラウザ own UIがまだ画面の一部を占めていて、
+  // window.innerHeightがその分だけ低い値を返すことがある。その後アドレスバーが
+  // 隠れて画面が広がっても、そのタイミングだけをうまく捉えられないと、以前
+  // 測った（低い）高さのままになってしまい、「一番下に黒い余白ができる＝
+  // 実際に使える高さより低く見積もってしまっている」という不具合につながって
+  // いた。window.visualViewport（対応環境ではこちらの方が実際に見えている
+  // 範囲を正しく反映する）があればそちらを優先して使う。
+  // また、ホームボタンの無い機種の画面下端（ホームインジケーター）分は
+  // env(safe-area-inset-bottom)としてCSSのcalc()側で確保する
+  // （非対応環境では0扱いになるだけなので、常につけてよい）。
   function adjustGanttScrollHeight_() {
     var scrollEl = document.getElementById('gantt-scroll');
     if (!scrollEl || document.getElementById('gantt-view').style.display === 'none') return;
     var rect = scrollEl.getBoundingClientRect();
-    var available = window.innerHeight - rect.top - 10; // 画面の一番下に少しだけ余白を残す
+    var viewportHeight = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    var available = viewportHeight - rect.top - 10; // 画面の一番下に少しだけ余白を残す
     if (available < 120) available = 120; // 極端に小さくなりすぎないよう最低限は確保する
-    scrollEl.style.maxHeight = available + 'px';
+    scrollEl.style.maxHeight = 'calc(' + available + 'px - env(safe-area-inset-bottom))';
   }
 
   // 【2026/9/18追加】横向き＋ガントチャート表示中だけ、ロゴ付きヘッダーを隠して
@@ -1653,7 +1674,14 @@
       // display:noneのままだとgetBoundingClientRect()が正しく測れないため、
       // 表示に切り替えたあと（描画後、ヘッダーの表示・非表示が確定したあと）に
       // 高さを合わせ直す。
+      // 【2026/9/18再修正】実機（特にiPhoneのSafari）では、タブを切り替えた
+      // 直後はブラウザのアドレスバーの表示・非表示がまだ確定しておらず、
+      // 1回だけの測り直しだと、その後アドレスバーが隠れて画面が広がっても
+      // 反映されないことがあった。時間差で何度か測り直すことで、最終的に
+      // 落ち着いた画面サイズにあわせて高さがずれないようにする。
       requestAnimationFrame(adjustGanttScrollHeight_);
+      setTimeout(adjustGanttScrollHeight_, 300);
+      setTimeout(adjustGanttScrollHeight_, 800);
     }
     renderCurrentView();
   }
@@ -5280,7 +5308,21 @@
       updateGanttLandscapeCompact_();
       if (currentView === 'gantt') adjustGanttScrollHeight_();
     }, 300);
+    // 【2026/9/18再修正】回転直後はブラウザのアドレスバーの表示状態がまだ
+    // 落ち着いていないことがあるため、少し間を空けてもう一度測り直す。
+    setTimeout(function () {
+      if (currentView === 'gantt') adjustGanttScrollHeight_();
+    }, 800);
   });
+  // 【2026/9/18再修正】window.visualViewportが使える環境（主にモバイルSafari・
+  // Chrome）では、アドレスバーの表示・非表示など「実際に見えている範囲」の
+  // 変化をwindow.resizeより正確・こまめに捉えられる。ガントチャート表本体の
+  // 高さがブラウザのUIの出入りに合わせてずれないよう、こちらも監視する。
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', function () {
+      if (currentView === 'gantt') adjustGanttScrollHeight_();
+    });
+  }
   // 【2026/9/12追加】アプリ内ガントチャートの表示期間ナビゲーション。
   // 【2026/9/17修正】「前」「次」ボタン（30日ずつ移動）を廃止した。
   // 【2026/9/17修正 その2】タップして開く月選択ピッカー（input type="month"）も、
