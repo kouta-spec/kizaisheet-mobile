@@ -178,7 +178,18 @@
     background: #fff2da; color: #7a4b00; white-space: nowrap;
   }
   .tabs {
-    position: sticky; top: 0; z-index: 100;
+    /* 【2026/9/20修正】ガントチャート表示中に画面上部へ重ねて貼り付ける他の
+       行（更新ボタン・期間表示や月ボタンの行・カテゴリボタンの行・日付ヘッダー）
+       との重なり順を決めるため、以前z-index: 100まで上げていたが、これだと
+       設定画面・作品/機材の詳細シート・確認ダイアログなど、画面全体を覆う
+       オーバーレイ（.sheet-overlayはz-index:30、確認ダイアログはz-index:60）
+       より手前に来てしまい、シートを開いたまま裏のタブをタップできてしまう
+       （タブの切り替え自体は起きるが、シートがかぶさったままなので「切り替わって
+       いないように見える」「ヘッダーだけ表示される」といった不具合の原因に
+       なっていた。オーバーレイより必ず後ろになるよう、値を10前後（オーバーレイの
+       最小値30より十分小さい範囲）に戻し、ガントチャート内の他の貼り付け行は
+       その中で相対的な重なり順だけ保てばよいので6〜9に収めた。 */
+    position: sticky; top: 0; z-index: 10;
     background: rgba(255,255,255,0.62);
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
@@ -211,7 +222,9 @@
      sticky化する。実際の貼り付け位置（top）はタブの高さぶんだけ下にずらす
      必要があるため、updateGanttStickyOffsets_()でJSから直接指定する。 */
   body.gantt-view-active .gantt-actions {
-    position: sticky; z-index: 90; background: var(--bg);
+    /* 【2026/9/20修正】.tabsと同じ理由でz-index: 90は高すぎた（全画面
+       オーバーレイより手前に来てしまう）ため9に下げた。 */
+    position: sticky; z-index: 9; background: var(--bg);
   }
   .gantt-actions button {
     flex: 1; padding: 10px 0; border-radius: 14px; border: none;
@@ -266,7 +279,8 @@
     position: static;
   }
   body.gantt-view-active .gantt-nav-row {
-    position: sticky; z-index: 80; background: var(--bg);
+    /* 【2026/9/20修正】.tabsと同じ理由でz-index: 80は高すぎたため8に下げた。 */
+    position: sticky; z-index: 8; background: var(--bg);
   }
   /* 【2026/9/13追加】作品名の凡例（色マーク）は廃止し、代わりに機材カテゴリーへ
      ジャンプするショートカットボタンの並びにした。ボタンが多いときは横スクロール
@@ -276,7 +290,8 @@
   /* 【2026/9/20追加】カテゴリボタンの行も同様に、ガントチャート表示中は
      画面上部（タブ→更新ボタン→期間表示/月ボタンの行、の下）に貼り付ける。 */
   body.gantt-view-active .gantt-cat-shortcuts {
-    position: sticky; z-index: 70; background: var(--bg);
+    /* 【2026/9/20修正】.tabsと同じ理由でz-index: 70は高すぎたため7に下げた。 */
+    position: sticky; z-index: 7; background: var(--bg);
   }
   .gantt-cat-btn {
     flex: none; border: 1px solid var(--border); background: #fff; color: var(--blue-dark);
@@ -331,7 +346,8 @@
      overflow-x: hidden（スクロールバーを出さず、ユーザーのタッチでは動かない）
      にしつつ、scrollLeftへのJSからの代入自体は問題なく効く。 */
   .gantt-header-row {
-    position: sticky; top: var(--gantt-sticky-offset, 0px); z-index: 55;
+    /* 【2026/9/20修正】.tabsと同じ理由でz-index: 55は高すぎたため6に下げた。 */
+    position: sticky; top: var(--gantt-sticky-offset, 0px); z-index: 6;
     /* 幅は指定せず（block要素として親いっぱいに広がる、画面の横幅ぶん）、
        中の日付セルの合計幅（GANTT_LABEL_WIDTH+日数分×GANTT_DAY_WIDTH）の方が
        広くなることで、はみ出した分をoverflow: hiddenで見えなくする（＝
@@ -1251,7 +1267,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-20b';
+  var APP_BUILD_VERSION = '2026-09-20c';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
