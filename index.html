@@ -102,6 +102,15 @@
      class名（gantt-landscape-compact）はupdateGanttLandscapeCompact_()が
      付け外しする。 */
   body.gantt-landscape-compact header { display: none; }
+  /* 【2026/9/20追加】横向き＋ガントチャート表示中は、画面上部に貼り付けたままに
+     なる部分（sticky）が多いほど、機材の行を表示できる分の高さがその分減って
+     しまう。横向きのときは「作品一覧・機材使用状況・ガントチャート」のタブと、
+     機材カテゴリーへジャンプするボタンさえあれば十分で、更新ボタン・期間表示・
+     今日ボタン・月ボタンの行は不要とのことなので、この組み合わせのときは
+     まとめて非表示にする（縦向きや他のタブに切り替えれば今まで通り表示される。
+     更新はほかのタブから行える）。 */
+  body.gantt-landscape-compact .gantt-actions { display: none; }
+  body.gantt-landscape-compact .gantt-nav-row { display: none; }
   /* 【2026/8/29追加】ヘッダーにアプリのアイコンロゴ（icon-192.png、ホーム画面の
      ショートカットアイコンと同じ画像）を表示したいとの要望に対応。タイトル文字と
      まとめて1つの中央配置グループにするため、直接のグリッド子要素はこの
@@ -283,26 +292,53 @@
        出入りにJS側の再計算が追いつかず、何度対策しても下に余白ができてしまう
        という報告が続いた。
        そこで方針を変え、この表本体の高さを一切計算しないことにした。この要素は
-       もう「決まった高さの中でスクロールする窓」ではなく、中身（日付ヘッダー＋
-       機材の行）の分だけ自然に縦へ伸びる、ただの続きの内容にする。かわりに
-       ページ全体をブラウザ標準の方法で縦にスクロールし、その間、上の操作部分
-       （タブ・更新ボタン・期間表示や月ボタン・カテゴリボタン）だけをsticky指定で
-       画面上部に貼り付けたままにする（貼り付ける高さの計算はupdateGanttStickyOffsets_
-       を参照）。これなら「画面の高さがいくつか」を推測する必要が最初からなく、
-       アドレスバーが引っ込んで画面が広がれば、その分だけ単純に多くの行が
-       見えるようになる（計算がそもそも存在しないので、ずれようがない）。
-       横方向（日付を左右にスライドする操作）はこれまで通りこの要素自身が
-       スクロールコンテナとして持つ必要があるため、overflow-xだけはautoのまま
-       残す。overflow-yは「visible」ではなく「clip」にする。単純にvisibleに
-       すると、CSSの仕様上「片方の軸がvisible以外だと、visibleだったもう片方の
-       軸も自動的にauto扱いに格上げされる」ため、この要素自体が縦スクロール
-       コンテナに戻ってしまい、date-header（.gantt-head-cell/.gantt-corner）の
-       position:sticky; topがこの要素を基準にしてしまう（＝ページではなくこの
-       中だけで貼り付く）。clipなら縦方向はスクロールコンテナにならないため、
-       date-headerのstickyは正しくページ全体を基準にできる。 */
-    overflow-x: auto; overflow-y: clip; -webkit-overflow-scrolling: touch;
+       もう「決まった高さの中でスクロールする窓」ではなく、中身（機材の行）の分
+       だけ自然に縦へ伸びる、ただの続きの内容にする。かわりにページ全体を
+       ブラウザ標準の方法で縦にスクロールし、その間、上の操作部分（タブ・更新
+       ボタン・期間表示や月ボタン・カテゴリボタン・日付ヘッダー）だけをsticky
+       指定で画面上部に貼り付けたままにする。これなら「画面の高さがいくつか」を
+       推測する必要が最初からなく、アドレスバーが引っ込んで画面が広がれば、
+       その分だけ単純に多くの行が見えるようになる（計算がそもそも存在しないので、
+       ずれようがない）。
+       【2026/9/20再修正】日付ヘッダー（.gantt-head-cell/.gantt-corner）を、
+       この機材の行が並ぶ本体から.gantt-header-row（別要素）に分離した。
+       当初はこの本体を「横方向だけスクロールコンテナ、縦方向はスクロール
+       コンテナではない」状態にして日付ヘッダーのposition:sticky; topを
+       ページ基準にしようとした（overflow-x:auto; overflow-y:clip;）が、
+       実際に試したところ、CSSの仕様上「片方の軸がauto/hidden/scrollのような
+       スクロール可能な値で、もう片方がclipの場合、clip側はhiddenへ格上げ
+       される」という規定があり、結局overflow-yはhidden（＝縦方向も
+       スクロールコンテナ）になってしまうと判明した。これでは日付ヘッダーの
+       stickyがページではなくこの本体を基準にしてしまい、実機で「スライドしても
+       日付ヘッダーが画面上部に留まらない／位置がおかしい」という不具合の
+       原因になっていた。
+       日付ヘッダーを完全に別の要素（.gantt-header-row）に外に出したことで、
+       この本体はもう「日付ヘッダーをページ基準でstickyさせる」役割を
+       持つ必要がなくなった。横方向のスクロールだけ担えればよいので、
+       overflow-yの値がどう解決されるか（auto/hidden/clipのどれになるか）は
+       もう問題にならない。 */
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
     border-top: 1px solid var(--border);
     background: #fff;
+  }
+  /* 【2026/9/20追加】日付ヘッダー（左上の角＋日付の並び）専用の行。機材の行が
+     並ぶ本体（.gantt-scroll）とは別要素にすることで、本体側のoverflow-y
+     （縦方向のスクロールコンテナ判定）が日付ヘッダーのsticky位置に影響しなく
+     なる（詳しい理由は.gantt-scrollのコメント参照）。
+     この行自体はユーザーが指で直接スクロールする対象ではなく、本体
+     （.gantt-scroll）を横にスライドしたときにJS（syncGanttHeaderScroll_）が
+     scrollLeftを合わせることで見た目上ついてくるように動かす。そのため
+     overflow-x: hidden（スクロールバーを出さず、ユーザーのタッチでは動かない）
+     にしつつ、scrollLeftへのJSからの代入自体は問題なく効く。 */
+  .gantt-header-row {
+    position: sticky; top: var(--gantt-sticky-offset, 0px); z-index: 55;
+    /* 幅は指定せず（block要素として親いっぱいに広がる、画面の横幅ぶん）、
+       中の日付セルの合計幅（GANTT_LABEL_WIDTH+日数分×GANTT_DAY_WIDTH）の方が
+       広くなることで、はみ出した分をoverflow: hiddenで見えなくする（＝
+       画面に見えているのは日付全体のうちの「窓」の部分だけになる）。 */
+    overflow: hidden; touch-action: none; background: #fbfbfd;
+    display: grid;
+    border-top: 1px solid var(--border);
   }
   .gantt-grid { display: grid; position: relative; width: max-content; }
   /* 【2026/9/13修正】機材名が長いと、固定幅の列を広げるかガントチャート本体を
@@ -344,14 +380,10 @@
   /* 【2026/9/16修正】日付が見づらいという指摘に対応し、日付1つ1つを枠で囲んで、
      どこからどこまでが同じ日か分かりやすくした。 */
   .gantt-head-cell {
-    /* 【2026/9/20修正】以前は#gantt-scroll自身が縦スクロールコンテナだったため
-       top:0はそのまま「この表本体の一番上」を指していたが、#gantt-scrollを
-       overflow-y:clipに変えてページ全体がスクロールする方式にしたことで、
-       このtopは「ページの一番上から何px」を指すようになった。ちょうど
-       タブ・更新ボタン・期間表示や月ボタンの行・カテゴリボタンの行の高さの
-       合計ぶんだけ下にずらす必要があるため、その値はupdateGanttStickyOffsets_()が
-       CSS変数（--gantt-sticky-offset）としてJSから設定する。 */
-    position: sticky; top: var(--gantt-sticky-offset, 0px); z-index: 50; background: #fbfbfd;
+    /* 【2026/9/20修正】.gantt-header-row（別要素）に分離したことで、この
+       セル自体はもうposition:stickyを持たない（親の.gantt-header-rowが
+       ページに対してsticky、かつ横スクロール位置もJSが親ごと動かすため、
+       このセルは中でただ並んでいるだけでよい）。 */
     display: flex; align-items: center; justify-content: center;
     font-size: 10.5px; color: var(--sub); border: 1px solid var(--border);
     font-variant-numeric: tabular-nums;
@@ -360,7 +392,9 @@
   .gantt-head-cell.gc-sun { background: #ffd6d6; }
   .gantt-head-cell.gc-today { font-weight: 700; color: var(--blue-dark); box-shadow: inset 0 -2px 0 var(--blue); }
   .gantt-corner {
-    position: sticky; top: var(--gantt-sticky-offset, 0px); left: 0; z-index: 60;
+    /* 親（.gantt-header-row）の中で左右にプログラム的にスクロールさせても、
+       この角セルだけは常に左端に見えるよう、左方向だけsticky指定を残す。 */
+    position: sticky; left: 0; z-index: 2;
     background: #fbfbfd; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
   }
   /* 【2026/9/16修正】日付の枠をヘッダーだけでなく、ガントチャート本体（予約の帯が
@@ -959,6 +993,11 @@
       <div id="gantt-month-strip" class="gantt-month-strip"></div>
     </div>
     <div id="gantt-cat-shortcuts" class="gantt-cat-shortcuts"></div>
+    <!-- 【2026/9/20追加】日付ヘッダー（左上の角＋日付の並び）を、機材の行が並ぶ
+         本体（#gantt-scroll）とは別の要素に分けた。理由はコメント参照
+         （.gantt-header-rowのCSS側）。本体を指で横にスライドしたときは、この
+         ヘッダー行もJSで横スクロール位置を合わせる（syncGanttHeaderScroll_）。 -->
+    <div id="gantt-header-row" class="gantt-header-row"></div>
     <div id="gantt-scroll" class="gantt-scroll">
       <div id="gantt-grid" class="gantt-grid"></div>
     </div>
@@ -1212,7 +1251,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-20a';
+  var APP_BUILD_VERSION = '2026-09-20b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2495,6 +2534,20 @@
   // #gantt-scrollの横スクロール位置を監視し、端に近づくたびに実際に描画する
   // 日数（ganttWindowDays）自体を延ばす。ページ内で1回だけ仕込めばよい
   // （#gantt-scroll自体は再描画で消えない）。
+  // 【2026/9/20追加】日付ヘッダー（.gantt-header-row）を機材の行が並ぶ本体
+  // （#gantt-scroll）とは別要素に分けたことに伴い、本体を指で横にスライド
+  // したときは、このヘッダー側のscrollLeftもJSで追随させる必要がある
+  // （ヘッダー自体はoverflow: hiddenでユーザーの指では直接動かせないため）。
+  // ページ内で1回だけ仕込めばよい（#gantt-scroll自体は再描画で消えない）。
+  function setupGanttHeaderScrollSync_() {
+    var scrollEl = document.getElementById('gantt-scroll');
+    var headerRowEl = document.getElementById('gantt-header-row');
+    if (!scrollEl || !headerRowEl) return;
+    scrollEl.addEventListener('scroll', function () {
+      headerRowEl.scrollLeft = scrollEl.scrollLeft;
+    }, { passive: true });
+  }
+
   function setupGanttHorizontalInfiniteScroll_() {
     var scrollEl = document.getElementById('gantt-scroll');
     if (!scrollEl) return;
@@ -2525,6 +2578,9 @@
       // 手前に列が増えた分だけ、見た目の位置がずれないようスクロール位置を
       // 補正する（そうしないと、延長した瞬間に画面がガクッと動いて見える）。
       scrollEl.scrollLeft += chunk * GANTT_DAY_WIDTH;
+      // 【2026/9/20追加】日付ヘッダー（別要素）側もこの補正に合わせておく。
+      var headerRowEl_ = document.getElementById('gantt-header-row');
+      if (headerRowEl_) headerRowEl_.scrollLeft = scrollEl.scrollLeft;
     } else {
       ganttWindowDays += chunk;
       renderGanttView();
@@ -2564,7 +2620,13 @@
         if (!rowEl) return;
         var stickyOffsetStr = getComputedStyle(document.documentElement).getPropertyValue('--gantt-sticky-offset');
         var stickyOffset = parseFloat(stickyOffsetStr) || 0;
-        var targetY = window.scrollY + rowEl.getBoundingClientRect().top - stickyOffset;
+        // 【2026/9/20修正】日付ヘッダー（.gantt-header-row）を機材の行の本体とは
+        // 別要素に分けたことで、機材の行はもう「貼り付いている部分（タブ〜
+        // カテゴリボタン）」のすぐ下ではなく、その下にある日付ヘッダー自身の
+        // 高さぶんだけさらに下から始まる。そのぶんもここで差し引く。
+        var headerRowEl = document.getElementById('gantt-header-row');
+        var headerRowH = headerRowEl ? headerRowEl.getBoundingClientRect().height : 0;
+        var targetY = window.scrollY + rowEl.getBoundingClientRect().top - stickyOffset - headerRowH;
         try {
           window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
         } catch (e) {
@@ -2578,12 +2640,14 @@
   function renderGanttView() {
     var scrollEl = document.getElementById('gantt-scroll');
     var gridEl = document.getElementById('gantt-grid');
+    var headerRowEl = document.getElementById('gantt-header-row');
     var emptyEl = document.getElementById('gantt-empty');
     // 再描画のたびに、古い帯を指していた吹き出しが残らないよう一旦消す。
     hideGanttTooltip_();
 
     if (!dataLoaded.bookings || !dataLoaded.ganttData) {
       gridEl.innerHTML = '';
+      headerRowEl.innerHTML = '';
       document.getElementById('gantt-cat-shortcuts').innerHTML = '';
       renderEmptyState(emptyEl, false, '');
       return;
@@ -2592,6 +2656,7 @@
     var rows = ganttEquipmentOrder;
     if (!rows.length) {
       gridEl.innerHTML = '';
+      headerRowEl.innerHTML = '';
       document.getElementById('gantt-cat-shortcuts').innerHTML = '';
       renderEmptyState(emptyEl, true, 'マスターガントチャートに機材が登録されていません');
       return;
@@ -2603,15 +2668,16 @@
     // 何が起きているか分からなくなる。try/catchで囲み、失敗した場合は
     // エラー内容をそのまま画面に表示する（原因調査・問い合わせがしやすいように）。
     try {
-      renderGanttViewInner_(scrollEl, gridEl, rows);
+      renderGanttViewInner_(scrollEl, gridEl, headerRowEl, rows);
     } catch (err) {
       gridEl.innerHTML = '';
+      headerRowEl.innerHTML = '';
       document.getElementById('gantt-cat-shortcuts').innerHTML = '';
       renderEmptyState(emptyEl, true, 'ガントチャートの表示に失敗しました: ' + err.message);
     }
   }
 
-  function renderGanttViewInner_(scrollEl, gridEl, rows) {
+  function renderGanttViewInner_(scrollEl, gridEl, headerRowEl, rows) {
     if (!ganttWindowStart) ganttWindowStart = ganttDefaultWindowStart_();
     // 前回までに壊れた形式のデータがキャッシュに残っている可能性に備え、
     // 配列であることを保証してから使う。
@@ -2656,18 +2722,27 @@
     // めり込んで見えることがあった。
     updateGanttStickyOffsets_();
 
-    gridEl.style.gridTemplateColumns = GANTT_LABEL_WIDTH + 'px repeat(' + days.length + ', ' + GANTT_DAY_WIDTH + 'px)';
-    // 【2026/9/19修正】1行目（日付ヘッダー）だけ他の行の半分の高さにする。
-    gridEl.style.gridTemplateRows = GANTT_HEADER_ROW_HEIGHT + 'px repeat(' + rows.length + ', ' + GANTT_ROW_HEIGHT + 'px)';
+    var columnsTemplate = GANTT_LABEL_WIDTH + 'px repeat(' + days.length + ', ' + GANTT_DAY_WIDTH + 'px)';
+    gridEl.style.gridTemplateColumns = columnsTemplate;
+    // 【2026/9/20修正】日付ヘッダー（1行目）を.gantt-header-row（別要素）に
+    // 分離したため、この本体（gridEl）はもう機材の行だけを並べればよい。
+    gridEl.style.gridTemplateRows = 'repeat(' + rows.length + ', ' + GANTT_ROW_HEIGHT + 'px)';
     gridEl.innerHTML = '';
 
-    var frag = document.createDocumentFragment();
+    // 【2026/9/20追加】日付ヘッダー（角＋日付の並び）は、機材の行が並ぶ本体
+    // （gridEl）とは別の.gantt-header-rowに組み立てる。列幅は本体とぴったり
+    // 揃える必要があるため、同じcolumnsTemplateを使う。
+    headerRowEl.style.gridTemplateColumns = columnsTemplate;
+    // 【2026/9/19修正】日付ヘッダーの高さは機材の行の半分にする。
+    headerRowEl.style.gridTemplateRows = GANTT_HEADER_ROW_HEIGHT + 'px';
+    headerRowEl.innerHTML = '';
+    var headerFrag = document.createDocumentFragment();
 
     var corner = document.createElement('div');
     corner.className = 'gantt-corner';
     corner.style.gridColumn = '1';
     corner.style.gridRow = '1';
-    frag.appendChild(corner);
+    headerFrag.appendChild(corner);
 
     days.forEach(function (d, idx) {
       var dow = d.getDay();
@@ -2680,11 +2755,19 @@
       cell.style.gridColumn = String(idx + 2);
       cell.style.gridRow = '1';
       cell.textContent = (d.getMonth() + 1) + '/' + d.getDate();
-      frag.appendChild(cell);
+      headerFrag.appendChild(cell);
     });
+    headerRowEl.appendChild(headerFrag);
+    // 本体を横にスライドしたあとの再描画でも、日付ヘッダーの横スクロール位置が
+    // 本体とずれないよう、組み立て直した直後に必ず合わせておく
+    // （スクロールイベント任せだと、再描画のタイミングによっては一瞬ずれて見える
+    // ことがあるため）。
+    headerRowEl.scrollLeft = scrollEl.scrollLeft;
+
+    var frag = document.createDocumentFragment();
 
     rows.forEach(function (name, rowIdx) {
-      var gridRow = rowIdx + 2;
+      var gridRow = rowIdx + 1;
       var label = document.createElement('div');
       label.className = 'gantt-row-label';
       label.style.gridColumn = '1';
@@ -2770,6 +2853,10 @@
       if (todayIdx >= 0) {
         ganttScrollAdjustPending_ = true;
         scrollEl.scrollLeft = Math.max(0, (todayIdx - 2) * GANTT_DAY_WIDTH);
+        // 【2026/9/20追加】本体側のスクロール位置を動かしたときは、日付ヘッダー
+        // （別要素）側も必ず同じ位置に合わせる（scrollイベント経由の同期を
+        // 待たず、その場で揃えておく）。
+        headerRowEl.scrollLeft = scrollEl.scrollLeft;
         requestAnimationFrame(function () { ganttScrollAdjustPending_ = false; });
       }
     }
@@ -5386,6 +5473,7 @@
   // もっと前の日付まで途中で止まらずに見られるようにする（詳細はコメント参照）。
   // ページ内で1回だけ仕込めばよい。
   setupGanttHorizontalInfiniteScroll_();
+  setupGanttHeaderScrollSync_();
   // 【2026/9/20修正】ガントチャート表本体はもう高さを計算しない（自然な高さで
   // 伸び、ページ全体がスクロールする）ため、ここで測り直す必要があるのは
   // 上部に貼り付けたボタン行などの高さ（updateGanttStickyOffsets_）だけになった。
