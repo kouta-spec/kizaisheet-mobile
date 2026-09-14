@@ -419,10 +419,24 @@
      ときに1日ごとのdiv要素を大量に作るより軽いため）。 */
   .gantt-track { position: relative; display: grid; align-items: center; border-bottom: 1px solid #f0f0f0; border-right: 1px solid var(--border); }
   .gantt-bar {
-    grid-row: 1; height: 20px; border-radius: 5px; padding: 0 6px;
-    font-size: 10.5px; line-height: 20px; color: #fff; font-weight: 700;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    grid-row: 1; height: 20px; border-radius: 5px;
+    font-size: 10.5px; color: #fff; font-weight: 700;
     box-shadow: 0 1px 2px rgba(0,0,0,0.18);
+    /* 【2026/9/20追加】予約期間が長くバーが横に長くなると、以前は作品名を
+       バーの左端に1回だけ表示していたため、横スクロールでその部分が画面の
+       外に出てしまうと、バーの色だけが見えて何の予約か分からなくなって
+       しまっていた。作品名を15日おきに繰り返し表示する子要素（.gantt-bar-label）
+       を絶対配置で並べる入れ物にするため、position: relativeにする
+       （はみ出した分はoverflow: hiddenで隠す）。 */
+    position: relative; overflow: hidden;
+  }
+  .gantt-bar-label {
+    position: absolute; top: 0; height: 20px; line-height: 20px; box-sizing: border-box;
+    padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* このラベル自体はバー本体（.gantt-bar）の上に重なる飾りなので、マウスの
+       ホバーで吹き出しを出す判定（.gantt-barのmouseenter/mouseleave）を
+       このラベルが奪ってしまわないよう、クリック・ホバーともに素通りさせる。 */
+    pointer-events: none;
   }
   #gantt-empty { padding: 30px 14px; text-align: center; color: var(--sub); font-size: 13px; }
   /* 【2026/9/16追加】予約の帯にカーソルを合わせたときの詳細吹き出し
@@ -1267,7 +1281,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-20c';
+  var APP_BUILD_VERSION = '2026-09-20d';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1329,6 +1343,8 @@
   // 秒数（ミリ秒）。以前はブラウザ標準のtitle属性任せで3秒程度かかっていたが、
   // ここを変えるだけで秒数を調整できるようにした。
   var GANTT_TOOLTIP_DELAY_MS = 1000;
+  // 【2026/9/20追加】予約期間が長いバーで作品名を繰り返し表示する間隔（日数）。
+  var GANTT_BAR_LABEL_REPEAT_DAYS = 15;
   var ganttTooltipTimer_ = null;
   // 【2026/9/14追加】機材名欄をまとめて左右にスワイプするための、現在の共通
   // スクロール量（px、0＝各行とも名前の先頭を表示）。ドラッグ中の状態は
@@ -2830,7 +2846,22 @@
         bar.className = 'gantt-bar';
         bar.style.background = ganttProjectColors[item.b.project] || '#4361ee';
         bar.style.gridColumn = (startIdx + 1) + ' / ' + (endIdx + 2);
-        bar.textContent = item.b.project;
+        // 【2026/9/20追加】予約期間が長いバーでは、作品名をバーの左端に1回だけ
+        // 出すと、横スクロールでその部分が画面の外に出たとき何の予約か
+        // 分からなくなってしまう。GANTT_BAR_LABEL_REPEAT_DAYSごとに作品名を
+        // 繰り返し配置し、どのあたりまでスクロールしても近くに必ず作品名が
+        // 見えるようにする（バーが15日より短い場合は、これまで通り左端に
+        // 1回だけ表示される）。
+        var barDaySpan = endIdx - startIdx + 1;
+        for (var labelOffset = 0; labelOffset < barDaySpan; labelOffset += GANTT_BAR_LABEL_REPEAT_DAYS) {
+          var labelSpan = document.createElement('span');
+          labelSpan.className = 'gantt-bar-label';
+          labelSpan.textContent = item.b.project;
+          labelSpan.style.left = (labelOffset * GANTT_DAY_WIDTH) + 'px';
+          var labelSegDays = Math.min(GANTT_BAR_LABEL_REPEAT_DAYS, barDaySpan - labelOffset);
+          labelSpan.style.width = Math.max(0, labelSegDays * GANTT_DAY_WIDTH - 8) + 'px';
+          bar.appendChild(labelSpan);
+        }
         // 【2026/9/16修正】ブラウザ標準のtitle属性は表示までの時間を調整できない
         // （実測3秒程度）ため、自前の吹き出しに置き換え、GANTT_TOOLTIP_DELAY_MS
         // （1秒）で表示できるようにした。
