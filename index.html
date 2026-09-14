@@ -801,16 +801,11 @@
      @media自体は条件付きでも、元の定義より前に置くと（横向きであっても）
      元の定義の方が後勝ちで効いてしまい、意図した上書きにならない。 */
   @media (orientation: landscape) {
-    /* 【2026/9/18再修正】1100pxで頭打ちにしていたが、画面幅がそれより広い
-       タブレットなどでは左右にまた余白ができてしまうとの指摘があったため、
-       上限を設けず画面幅いっぱいまで使うようにした。あわせて、横向きだと
-       ノッチ（切り欠き）が画面の左右に来る端末があるため、その分だけ
-       左右にpaddingを入れて、内容がノッチの裏に隠れないようにする。 */
-    #app {
-      max-width: 100%;
-      padding-left: env(safe-area-inset-left);
-      padding-right: env(safe-area-inset-right);
-    }
+    /* 【2026/9/19修正】1100px上限を撤廃し、safe-area分のpaddingを足す修正を
+       試したが、実機ではかえって左右の余白が増え、改善前の状態の方が良かった
+       との報告があったため、元の「1100pxを上限に画面幅いっぱいまで使う」
+       という指定に戻した。 */
+    #app { max-width: min(1100px, 100%); }
     header { padding: calc(env(safe-area-inset-top) + 6px) 18px 8px; }
     header h1 { font-size: 16px; }
     .header-logo { width: 22px; height: 22px; }
@@ -1150,7 +1145,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-18d';
+  var APP_BUILD_VERSION = '2026-09-19a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1205,6 +1200,9 @@
   // 【2026/9/13修正】機材名の行にカテゴリ名も小さく表示するようになったため、
   // 2段分の高さが収まるよう少しだけ高さを増やした。
   var GANTT_ROW_HEIGHT = 38;
+  // 【2026/9/19追加】日付だけを表示するヘッダー行（1行目）は、機材の行ほど
+  // 高さが要らないとの指摘があったため、機材の行の半分の高さにする。
+  var GANTT_HEADER_ROW_HEIGHT = Math.round(GANTT_ROW_HEIGHT / 2);
   // 【2026/9/16追加】予約の帯にカーソルを合わせてから詳細の吹き出しが出るまでの
   // 秒数（ミリ秒）。以前はブラウザ標準のtitle属性任せで3秒程度かかっていたが、
   // ここを変えるだけで秒数を調整できるようにした。
@@ -1622,25 +1620,18 @@
   // 画面の下までしっかり見えるようになる（横向きにすると画面自体の高さが
   // 小さくなるため、固定のpx数を引くだけでは行がほとんど見えなくなって
   // しまっていた）。
-  // 【2026/9/18再修正】スマホの実機（特にiPhoneのSafari）では、横向きにした
-  // 直後はアドレスバーなどのブラウザ own UIがまだ画面の一部を占めていて、
-  // window.innerHeightがその分だけ低い値を返すことがある。その後アドレスバーが
-  // 隠れて画面が広がっても、そのタイミングだけをうまく捉えられないと、以前
-  // 測った（低い）高さのままになってしまい、「一番下に黒い余白ができる＝
-  // 実際に使える高さより低く見積もってしまっている」という不具合につながって
-  // いた。window.visualViewport（対応環境ではこちらの方が実際に見えている
-  // 範囲を正しく反映する）があればそちらを優先して使う。
-  // また、ホームボタンの無い機種の画面下端（ホームインジケーター）分は
-  // env(safe-area-inset-bottom)としてCSSのcalc()側で確保する
-  // （非対応環境では0扱いになるだけなので、常につけてよい）。
+  // 【2026/9/19修正】window.visualViewportを優先して使い、さらに
+  // env(safe-area-inset-bottom)ぶんも差し引く形を試したが、実機ではかえって
+  // 画面下部の余白が増えてしまう（前回の状態より悪化する）との報告があったため、
+  // シンプルにwindow.innerHeightだけを使う形に戻した。あわせて、下に残す
+  // 余白も10px→4pxに減らし、機材名の行がなるべく画面の一番下まで見えるようにした。
   function adjustGanttScrollHeight_() {
     var scrollEl = document.getElementById('gantt-scroll');
     if (!scrollEl || document.getElementById('gantt-view').style.display === 'none') return;
     var rect = scrollEl.getBoundingClientRect();
-    var viewportHeight = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    var available = viewportHeight - rect.top - 10; // 画面の一番下に少しだけ余白を残す
+    var available = window.innerHeight - rect.top - 4; // 画面の一番下に少しだけ余白を残す
     if (available < 120) available = 120; // 極端に小さくなりすぎないよう最低限は確保する
-    scrollEl.style.maxHeight = 'calc(' + available + 'px - env(safe-area-inset-bottom))';
+    scrollEl.style.maxHeight = available + 'px';
   }
 
   // 【2026/9/18追加】横向き＋ガントチャート表示中だけ、ロゴ付きヘッダーを隠して
@@ -2570,7 +2561,8 @@
     renderGanttCategoryShortcuts_(scrollEl, rows);
 
     gridEl.style.gridTemplateColumns = GANTT_LABEL_WIDTH + 'px repeat(' + days.length + ', ' + GANTT_DAY_WIDTH + 'px)';
-    gridEl.style.gridTemplateRows = 'repeat(' + (rows.length + 1) + ', ' + GANTT_ROW_HEIGHT + 'px)';
+    // 【2026/9/19修正】1行目（日付ヘッダー）だけ他の行の半分の高さにする。
+    gridEl.style.gridTemplateRows = GANTT_HEADER_ROW_HEIGHT + 'px repeat(' + rows.length + ', ' + GANTT_ROW_HEIGHT + 'px)';
     gridEl.innerHTML = '';
 
     var frag = document.createDocumentFragment();
