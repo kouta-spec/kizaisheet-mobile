@@ -71,6 +71,18 @@
     pointer-events: none;
   }
   #app { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
+  /* 【2026/9/20発見】上のpadding-bottom: 90pxは、右下に浮いている「＋」ボタン
+     （新規予約追加用のFAB、position:fixedで#appの外に浮いている）に一覧の
+     最後の項目が隠れてしまわないよう、作品一覧・機材使用状況の画面向けに
+     用意されていたもの。
+     ガントチャートをページ全体スクロール方式に変えたことで、この90pxぶんの
+     余白がそのままページの一番下に「スライドすると出てくる黒っぽい余白」として
+     毎回現れてしまっていたと分かった（これまでの高さ計算をどう直しても
+     解決しなかったのは、実は表本体の高さ計算とは別に、この固定の90pxが
+     常にその下にもう1つ存在していたため）。ガントチャート表示中はこの
+     ボタンによる余白を必要としない（機材名をなるべく画面いっぱいまで見せたい
+     という要望のほうを優先する）ため、ここだけ余白をほぼ無くす。 */
+  body.gantt-view-active #app { padding-bottom: env(safe-area-inset-bottom, 0px); }
   /* ユーザーが設定画面から任意の背景画像を選ぶと、ここに画面全体を覆う形で敷かれる。
      画像が未設定の間は単なる白背景（--bg）のまま。カード・タブ・シートは半透明＋
      ぼかし（backdrop-filter）にしてあるので、画像を設定すると壁紙のように透けて見える。 */
@@ -157,7 +169,7 @@
     background: #fff2da; color: #7a4b00; white-space: nowrap;
   }
   .tabs {
-    position: sticky; top: 0; z-index: 10;
+    position: sticky; top: 0; z-index: 100;
     background: rgba(255,255,255,0.62);
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
@@ -183,6 +195,15 @@
     box-shadow: 0 1px 2px rgba(67,97,238,0.06);
   }
   .gantt-actions { display: flex; gap: 8px; padding: 0 14px 10px; }
+  /* 【2026/9/20追加】ページ全体をスクロールする方式に変更したのに合わせて、
+     ガントチャート表示中はこのボタン行も画面上部に貼り付けたままにする
+     （タブのすぐ下）。他のタブ（作品一覧・機材使用状況）ではこれまで通り
+     普通に流れる配置のままなので、bodyにgantt-view-activeが付いているときだけ
+     sticky化する。実際の貼り付け位置（top）はタブの高さぶんだけ下にずらす
+     必要があるため、updateGanttStickyOffsets_()でJSから直接指定する。 */
+  body.gantt-view-active .gantt-actions {
+    position: sticky; z-index: 90; background: var(--bg);
+  }
   .gantt-actions button {
     flex: 1; padding: 10px 0; border-radius: 14px; border: none;
     background: var(--tint); color: var(--blue-dark); font-size: 12.5px; font-weight: 700; cursor: pointer;
@@ -224,11 +245,30 @@
   }
   .gantt-month-chip:active { transform: scale(0.96); }
   .gantt-month-chip.active { color: var(--blue-dark); background: var(--tint); border-color: var(--blue-dark); }
+  /* 【2026/9/20追加】期間表示・今日ボタンの行（.gantt-nav）と月ボタンの行
+     （.gantt-month-strip）をまとめたこの外枠には、これまで横向き専用の
+     @media側にしかCSSが無かった（縦向きでは単なる無指定のdivとして、中の
+     2行がそのまま上下に並んでいた）。ページ全体スクロール方式に変えたのに
+     合わせて、縦向き・横向きどちらでもガントチャート表示中はこの行自体を
+     画面上部に貼り付けたままにする必要があるため、ここに向き共通の基本
+     ルールを追加する。貼り付け位置（top）はJS（updateGanttStickyOffsets_）が
+     直接指定する。 */
+  .gantt-nav-row {
+    position: static;
+  }
+  body.gantt-view-active .gantt-nav-row {
+    position: sticky; z-index: 80; background: var(--bg);
+  }
   /* 【2026/9/13追加】作品名の凡例（色マーク）は廃止し、代わりに機材カテゴリーへ
      ジャンプするショートカットボタンの並びにした。ボタンが多いときは横スクロール
      できるようにする。 */
   .gantt-cat-shortcuts { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0 14px 8px; }
   .gantt-cat-shortcuts::-webkit-scrollbar { display: none; }
+  /* 【2026/9/20追加】カテゴリボタンの行も同様に、ガントチャート表示中は
+     画面上部（タブ→更新ボタン→期間表示/月ボタンの行、の下）に貼り付ける。 */
+  body.gantt-view-active .gantt-cat-shortcuts {
+    position: sticky; z-index: 70; background: var(--bg);
+  }
   .gantt-cat-btn {
     flex: none; border: 1px solid var(--border); background: #fff; color: var(--blue-dark);
     font-size: 11.5px; font-weight: 700; padding: 6px 12px; border-radius: 20px;
@@ -236,15 +276,32 @@
   }
   .gantt-cat-btn:active { transform: scale(0.95); }
   .gantt-scroll {
-    overflow: auto; -webkit-overflow-scrolling: touch;
-    /* 【2026/9/18修正】固定で「画面の高さ - 300px」としていたが、スマホ・タブレットを
-       横向きにすると画面自体の高さが小さくなるため、同じ300pxを引いてもほとんど
-       高さが残らず、機材名が数行しか見えなくなってしまっていた（ヘッダーや
-       タブなど上にある部分の実際の高さは向きを変えても変わらないのに、画面の
-       高さだけが変わるため）。ここは初期値・JS未実行時のフォールバックとしてのみ
-       残し、実際の高さはadjustGanttScrollHeight_()でこの要素の実際の位置を測って
-       JSから直接指定する（縦向き・横向きどちらでも、画面の一番下まで使い切る）。 */
-    max-height: calc(100vh - 300px); border-top: 1px solid var(--border);
+    /* 【2026/9/20修正】これまで、この表本体の高さそのものをJS/CSSで「画面の
+       残り部分にちょうど合う高さ」に計算して合わせようとしてきたが（画面の
+       上から表本体までの距離を測ってwindow.innerHeightやvisualViewport.height、
+       100dvhなどから引き算する方式）、実機（特にiPhoneのSafari）ではアドレスバーの
+       出入りにJS側の再計算が追いつかず、何度対策しても下に余白ができてしまう
+       という報告が続いた。
+       そこで方針を変え、この表本体の高さを一切計算しないことにした。この要素は
+       もう「決まった高さの中でスクロールする窓」ではなく、中身（日付ヘッダー＋
+       機材の行）の分だけ自然に縦へ伸びる、ただの続きの内容にする。かわりに
+       ページ全体をブラウザ標準の方法で縦にスクロールし、その間、上の操作部分
+       （タブ・更新ボタン・期間表示や月ボタン・カテゴリボタン）だけをsticky指定で
+       画面上部に貼り付けたままにする（貼り付ける高さの計算はupdateGanttStickyOffsets_
+       を参照）。これなら「画面の高さがいくつか」を推測する必要が最初からなく、
+       アドレスバーが引っ込んで画面が広がれば、その分だけ単純に多くの行が
+       見えるようになる（計算がそもそも存在しないので、ずれようがない）。
+       横方向（日付を左右にスライドする操作）はこれまで通りこの要素自身が
+       スクロールコンテナとして持つ必要があるため、overflow-xだけはautoのまま
+       残す。overflow-yは「visible」ではなく「clip」にする。単純にvisibleに
+       すると、CSSの仕様上「片方の軸がvisible以外だと、visibleだったもう片方の
+       軸も自動的にauto扱いに格上げされる」ため、この要素自体が縦スクロール
+       コンテナに戻ってしまい、date-header（.gantt-head-cell/.gantt-corner）の
+       position:sticky; topがこの要素を基準にしてしまう（＝ページではなくこの
+       中だけで貼り付く）。clipなら縦方向はスクロールコンテナにならないため、
+       date-headerのstickyは正しくページ全体を基準にできる。 */
+    overflow-x: auto; overflow-y: clip; -webkit-overflow-scrolling: touch;
+    border-top: 1px solid var(--border);
     background: #fff;
   }
   .gantt-grid { display: grid; position: relative; width: max-content; }
@@ -287,7 +344,14 @@
   /* 【2026/9/16修正】日付が見づらいという指摘に対応し、日付1つ1つを枠で囲んで、
      どこからどこまでが同じ日か分かりやすくした。 */
   .gantt-head-cell {
-    position: sticky; top: 0; z-index: 1; background: #fbfbfd;
+    /* 【2026/9/20修正】以前は#gantt-scroll自身が縦スクロールコンテナだったため
+       top:0はそのまま「この表本体の一番上」を指していたが、#gantt-scrollを
+       overflow-y:clipに変えてページ全体がスクロールする方式にしたことで、
+       このtopは「ページの一番上から何px」を指すようになった。ちょうど
+       タブ・更新ボタン・期間表示や月ボタンの行・カテゴリボタンの行の高さの
+       合計ぶんだけ下にずらす必要があるため、その値はupdateGanttStickyOffsets_()が
+       CSS変数（--gantt-sticky-offset）としてJSから設定する。 */
+    position: sticky; top: var(--gantt-sticky-offset, 0px); z-index: 50; background: #fbfbfd;
     display: flex; align-items: center; justify-content: center;
     font-size: 10.5px; color: var(--sub); border: 1px solid var(--border);
     font-variant-numeric: tabular-nums;
@@ -295,7 +359,10 @@
   .gantt-head-cell.gc-sat { background: #cfe2ff; }
   .gantt-head-cell.gc-sun { background: #ffd6d6; }
   .gantt-head-cell.gc-today { font-weight: 700; color: var(--blue-dark); box-shadow: inset 0 -2px 0 var(--blue); }
-  .gantt-corner { position: sticky; top: 0; left: 0; z-index: 3; background: #fbfbfd; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .gantt-corner {
+    position: sticky; top: var(--gantt-sticky-offset, 0px); left: 0; z-index: 60;
+    background: #fbfbfd; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  }
   /* 【2026/9/16修正】日付の枠をヘッダーだけでなく、ガントチャート本体（予約の帯が
      並ぶ部分）にも入れて、どの帯がどの日付にあたるか縦の線でも分かりやすくした
      （縦線の実体はbackground-image、1日ぶんの幅で1本ずつJS側で描く。行数が多い
@@ -1145,7 +1212,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-19b';
+  var APP_BUILD_VERSION = '2026-09-20a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -1612,43 +1679,39 @@
     });
   }
 
-  // 【2026/9/18追加】ガントチャートの表本体（#gantt-scroll）の高さを、CSSの
-  // 固定値（calc(100vh - 300px)）ではなく、実際にこの要素が画面のどこから
-  // 始まっているかを測ったうえで「そこから画面の一番下まで」に合わせて
-  // JSから直接指定する。こうすることで、縦向き・横向きのどちらでも、
-  // ヘッダーやタブなど上に来る部分の高さがどう変わっても、機材の行が
-  // 画面の下までしっかり見えるようになる（横向きにすると画面自体の高さが
-  // 小さくなるため、固定のpx数を引くだけでは行がほとんど見えなくなって
-  // しまっていた）。
-  // 【2026/9/19修正】window.visualViewportを優先して使い、さらに
-  // env(safe-area-inset-bottom)ぶんも差し引く形を試したが、実機ではかえって
-  // 画面下部の余白が増えてしまう（前回の状態より悪化する）との報告があったため、
-  // シンプルにwindow.innerHeightだけを使う形に戻した。あわせて、下に残す
-  // 余白も10px→4pxに減らし、機材名の行がなるべく画面の一番下まで見えるようにした。
-  // 【2026/9/19再修正】それでもなお「スマホのアドレスバーが引っ込んで画面が
-  // 広がったあとに、下に余白ができる」との報告があった。原因は、
-  // window.innerHeight（またはvisualViewport.height）はJSを実行した「その瞬間」の
-  // 値でしかなく、そのあとブラウザのアドレスバーが引っ込んで実際の表示領域が
-  // 広がっても、JS側が再計算するタイミングを逃すと、広がる前の（低い）高さの
-  // ままになってしまう、という点にあった。何度もJS側で再計算のタイミングを
-  // 増やす対症療法を重ねてきたが、根本的にはCSSの動的ビューポート単位
-  // （100dvh）に任せるのが正しい解決策。100dvhはブラウザ自身がアドレスバーの
-  // 出入りに合わせて常に追従してくれる値のため、JSは「表本体が画面の上から
-  // 何pxの位置にあるか」だけを測り、実際の高さの計算そのものはCSSのcalc()に
-  // 100dvhとして委ねる。こうすることで、このあとアドレスバーが引っ込んでも
-  // （JS側で再計算しなくても）ブラウザが自動的に高さを広げてくれる。
-  // 100dvh未対応の古い環境向けに、先にpx指定のフォールバック値を設定してから
-  // 100dvh指定で上書きする（無効な値としてブラウザに拒否された場合は、
-  // 直前に設定したpxのフォールバックのまま変わらないので安全）。
-  function adjustGanttScrollHeight_() {
-    var scrollEl = document.getElementById('gantt-scroll');
-    if (!scrollEl || document.getElementById('gantt-view').style.display === 'none') return;
-    var rect = scrollEl.getBoundingClientRect();
-    var offsetTop = rect.top; // 画面の上から表本体までの距離
-    var fallbackAvailable = window.innerHeight - offsetTop - 4;
-    if (fallbackAvailable < 120) fallbackAvailable = 120;
-    scrollEl.style.maxHeight = fallbackAvailable + 'px'; // 100dvh非対応環境向けのフォールバック
-    scrollEl.style.maxHeight = 'calc(100dvh - ' + offsetTop + 'px - 4px)';
+  // 【2026/9/20修正】これまでは「表本体（#gantt-scroll）の高さを画面の残り
+  // 部分にちょうど合わせる」ために、window.innerHeight→visualViewport.height→
+  // 100dvhと計算方法を何度も変えてきたが、実機（特にiPhoneのSafari）では
+  // アドレスバーの出入りにJSやCSSの計算が追いつかず、下に余白ができる問題が
+  // 解決しなかった。
+  // そこで方針を変え、この高さの計算自体をやめた。#gantt-scrollはもう決まった
+  // 高さの中でスクロールする窓ではなく、中身の分だけ自然に伸びるようにし
+  // （CSS側でmax-heightを撤廃、overflow-yもclipに変更）、かわりにページ全体を
+  // ブラウザ標準の方法で縦にスクロールする。この関数は、その間ずっと画面上部に
+  // 貼り付けておきたい操作部分（タブ→更新ボタン→期間表示/月ボタンの行→
+  // カテゴリボタンの行、の順）それぞれの実際の高さを測り、後ろのものほど
+  // 手前の合計ぶんだけ下にずらして貼り付く位置（top）を計算するだけでよくなった
+  // （＝「画面の高さがいくつか」を推測する必要がそもそもない）。日付ヘッダー
+  // （.gantt-head-cell/.gantt-corner）もこの続きとして、CSS変数
+  // --gantt-sticky-offsetを通じて同じ位置に貼り付く。
+  function updateGanttStickyOffsets_() {
+    if (currentView !== 'gantt') return;
+    var tabsEl = document.getElementById('view-tabs');
+    var actionsEl = document.querySelector('.gantt-actions');
+    var navRowEl = document.querySelector('.gantt-nav-row');
+    var catEl = document.getElementById('gantt-cat-shortcuts');
+
+    var tabsH = tabsEl ? tabsEl.getBoundingClientRect().height : 0;
+    var actionsH = actionsEl ? actionsEl.getBoundingClientRect().height : 0;
+    var navRowH = navRowEl ? navRowEl.getBoundingClientRect().height : 0;
+    var catH = catEl ? catEl.getBoundingClientRect().height : 0;
+
+    if (actionsEl) actionsEl.style.top = tabsH + 'px';
+    if (navRowEl) navRowEl.style.top = (tabsH + actionsH) + 'px';
+    if (catEl) catEl.style.top = (tabsH + actionsH + navRowH) + 'px';
+
+    var gridOffset = tabsH + actionsH + navRowH + catH;
+    document.documentElement.style.setProperty('--gantt-sticky-offset', gridOffset + 'px');
   }
 
   // 【2026/9/18追加】横向き＋ガントチャート表示中だけ、ロゴ付きヘッダーを隠して
@@ -1675,21 +1738,20 @@
     document.querySelector('.search-bar').style.display = isGantt ? 'none' : '';
     document.getElementById('list').style.display = isGantt ? 'none' : '';
     document.getElementById('gantt-view').style.display = isGantt ? 'block' : 'none';
+    // 【2026/9/20追加】ガントチャート表示中だけ、更新ボタン・期間表示や月ボタンの
+    // 行・カテゴリボタンの行をsticky化する（他のタブでは今まで通り普通に流れる
+    // 配置のまま）。CSS側はbody.gantt-view-activeを付けたときだけ効く。
+    document.body.classList.toggle('gantt-view-active', isGantt);
     updateGanttLandscapeCompact_();
     if (isGantt) {
       document.getElementById('empty').style.display = 'none';
       document.getElementById('summary-bar').style.display = 'none';
       // display:noneのままだとgetBoundingClientRect()が正しく測れないため、
       // 表示に切り替えたあと（描画後、ヘッダーの表示・非表示が確定したあと）に
-      // 高さを合わせ直す。
-      // 【2026/9/18再修正】実機（特にiPhoneのSafari）では、タブを切り替えた
-      // 直後はブラウザのアドレスバーの表示・非表示がまだ確定しておらず、
-      // 1回だけの測り直しだと、その後アドレスバーが隠れて画面が広がっても
-      // 反映されないことがあった。時間差で何度か測り直すことで、最終的に
-      // 落ち着いた画面サイズにあわせて高さがずれないようにする。
-      requestAnimationFrame(adjustGanttScrollHeight_);
-      setTimeout(adjustGanttScrollHeight_, 300);
-      setTimeout(adjustGanttScrollHeight_, 800);
+      // 貼り付け位置を測り直す。フォントの読み込みなどでボタン行の高さが
+      // 描画直後からわずかに変わることがあるため、時間差でもう一度測り直す。
+      requestAnimationFrame(updateGanttStickyOffsets_);
+      setTimeout(updateGanttStickyOffsets_, 300);
     }
     renderCurrentView();
   }
@@ -2478,6 +2540,13 @@
   // ショートカットボタンを表示する。タップすると、そのカテゴリの最初の機材行まで
   // 縦方向にスクロールする（マスターガントチャートの並び順＝rowsの並び順の中で、
   // そのカテゴリが最初に出てくる行を探す）。
+  // 【2026/9/20修正】これまでは縦方向のスクロールが#gantt-scroll自身の中で
+  // 完結していたため、scrollEl.scrollTo({top:...})で表内の位置を指定すれば
+  // よかった。ページ全体をスクロールする方式に変えたことで、縦スクロールの
+  // 主体はもうこの要素ではなくページ（window）になったため、対象の行の実際の
+  // 画面上の位置（getBoundingClientRect）を測ったうえで、貼り付いている
+  // ボタン行などのすぐ下に来るようwindow.scrollToでページごとスクロールする
+  // ように変更した。
   function renderGanttCategoryShortcuts_(scrollEl, rows) {
     var wrap = document.getElementById('gantt-cat-shortcuts');
     wrap.innerHTML = '';
@@ -2491,10 +2560,15 @@
       btn.className = 'gantt-cat-btn';
       btn.textContent = cat;
       btn.addEventListener('click', function () {
+        var rowEl = document.querySelector('.gantt-row-label[data-row-idx="' + rowIdx + '"]');
+        if (!rowEl) return;
+        var stickyOffsetStr = getComputedStyle(document.documentElement).getPropertyValue('--gantt-sticky-offset');
+        var stickyOffset = parseFloat(stickyOffsetStr) || 0;
+        var targetY = window.scrollY + rowEl.getBoundingClientRect().top - stickyOffset;
         try {
-          scrollEl.scrollTo({ top: rowIdx * GANTT_ROW_HEIGHT, left: scrollEl.scrollLeft, behavior: 'smooth' });
+          window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
         } catch (e) {
-          scrollEl.scrollTop = rowIdx * GANTT_ROW_HEIGHT; // scrollTo未対応の古い環境向けの保険
+          window.scrollTo(0, Math.max(0, targetY)); // scrollTo(options)未対応の古い環境向けの保険
         }
       });
       wrap.appendChild(btn);
@@ -2558,7 +2632,6 @@
     document.getElementById('gantt-range-label').textContent =
       formatDateStr(days[0]) + ' 〜 ' + formatDateStr(days[days.length - 1]);
     renderGanttMonthStrip_();
-    adjustGanttScrollHeight_();
 
     // 表示期間内の予約だけを、機材名ごとにまとめておく。
     var byEquipment = {};
@@ -2576,6 +2649,12 @@
     // 【2026/9/13修正】作品名の凡例（色マーク）は廃止し、機材カテゴリーの
     // ショートカットボタンに差し替えた。
     renderGanttCategoryShortcuts_(scrollEl, rows);
+    // 【2026/9/20修正】sticky貼り付け位置の計算は、カテゴリボタンが実際に
+    // 並び終わって高さが確定したあと（renderGanttCategoryShortcuts_の直後）に
+    // 行う必要がある。ボタンを並べる前に測ると、カテゴリボタンの行の高さが
+    // 0のまま計算されてしまい、日付ヘッダーがカテゴリボタンの下に少し
+    // めり込んで見えることがあった。
+    updateGanttStickyOffsets_();
 
     gridEl.style.gridTemplateColumns = GANTT_LABEL_WIDTH + 'px repeat(' + days.length + ', ' + GANTT_DAY_WIDTH + 'px)';
     // 【2026/9/19修正】1行目（日付ヘッダー）だけ他の行の半分の高さにする。
@@ -2611,6 +2690,9 @@
       label.style.gridColumn = '1';
       label.style.gridRow = String(gridRow);
       label.title = name;
+      // 【2026/9/20追加】カテゴリボタンをタップしたときのページスクロール先を
+      // 探すために、この行が何行目か（rowIdx）をあとから見つけられるようにする。
+      label.dataset.rowIdx = String(rowIdx);
 
       // 【2026/9/13修正】上段に小さくカテゴリ名、下段に機材名を表示する。
       // 列の幅（GANTT_LABEL_WIDTH）は変えず、機材名が長い場合はこの内側だけを
@@ -5304,34 +5386,23 @@
   // もっと前の日付まで途中で止まらずに見られるようにする（詳細はコメント参照）。
   // ページ内で1回だけ仕込めばよい。
   setupGanttHorizontalInfiniteScroll_();
-  // 【2026/9/18追加】画面を回転させた（縦⇔横）ときや、ブラウザのアドレスバーの
-  // 出入りなどで画面の高さそのものが変わったときも、ガントチャート本体の高さを
-  // 測り直す。回転直後はブラウザによって実際の画面サイズがまだ更新されて
-  // いないことがあるため、少し時間を置いてからもう一度測り直す。
+  // 【2026/9/20修正】ガントチャート表本体はもう高さを計算しない（自然な高さで
+  // 伸び、ページ全体がスクロールする）ため、ここで測り直す必要があるのは
+  // 上部に貼り付けたボタン行などの高さ（updateGanttStickyOffsets_）だけになった。
+  // 画面を回転させた（縦⇔横）ときは、向きに応じてボタンの余白・大きさが変わり
+  // （landscape用CSSの分）貼り付け行の高さも変わるため測り直す。回転直後は
+  // ブラウザによって実際の画面サイズやCSSの再計算がまだ済んでいないことが
+  // あるため、少し時間を置いてからもう一度測り直す。
   window.addEventListener('resize', function () {
     updateGanttLandscapeCompact_();
-    if (currentView === 'gantt') adjustGanttScrollHeight_();
+    if (currentView === 'gantt') updateGanttStickyOffsets_();
   });
   window.addEventListener('orientationchange', function () {
     setTimeout(function () {
       updateGanttLandscapeCompact_();
-      if (currentView === 'gantt') adjustGanttScrollHeight_();
+      if (currentView === 'gantt') updateGanttStickyOffsets_();
     }, 300);
-    // 【2026/9/18再修正】回転直後はブラウザのアドレスバーの表示状態がまだ
-    // 落ち着いていないことがあるため、少し間を空けてもう一度測り直す。
-    setTimeout(function () {
-      if (currentView === 'gantt') adjustGanttScrollHeight_();
-    }, 800);
   });
-  // 【2026/9/18再修正】window.visualViewportが使える環境（主にモバイルSafari・
-  // Chrome）では、アドレスバーの表示・非表示など「実際に見えている範囲」の
-  // 変化をwindow.resizeより正確・こまめに捉えられる。ガントチャート表本体の
-  // 高さがブラウザのUIの出入りに合わせてずれないよう、こちらも監視する。
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', function () {
-      if (currentView === 'gantt') adjustGanttScrollHeight_();
-    });
-  }
   // 【2026/9/12追加】アプリ内ガントチャートの表示期間ナビゲーション。
   // 【2026/9/17修正】「前」「次」ボタン（30日ずつ移動）を廃止した。
   // 【2026/9/17修正 その2】タップして開く月選択ピッカー（input type="month"）も、
