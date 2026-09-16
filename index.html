@@ -422,6 +422,10 @@
     grid-row: 1; height: 20px; border-radius: 5px;
     font-size: 10.5px; color: #fff; font-weight: 700;
     box-shadow: 0 1px 2px rgba(0,0,0,0.18);
+    /* 【2026/9/21追加】タップ（クリック）でその予約の編集フォームを開けるように
+       したので、PCではカーソルを合わせたときにボタンだとわかるよう指カーソルにする。 */
+    cursor: pointer;
+    transition: transform 0.08s ease-out;
     /* 【2026/9/20追加】予約期間が長くバーが横に長くなると、以前は作品名を
        バーの左端に1回だけ表示していたため、横スクロールでその部分が画面の
        外に出てしまうと、バーの色だけが見えて何の予約か分からなくなって
@@ -430,6 +434,7 @@
        （はみ出した分はoverflow: hiddenで隠す）。 */
     position: relative; overflow: hidden;
   }
+  .gantt-bar:active { transform: scale(0.97); }
   .gantt-bar-label {
     position: absolute; top: 0; height: 20px; line-height: 20px; box-sizing: border-box;
     padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1281,7 +1286,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-20d';
+  var APP_BUILD_VERSION = '2026-09-21a';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2871,6 +2876,18 @@
           ganttTooltipTimer_ = setTimeout(function () { showGanttTooltip_(bar, tooltipText); }, GANTT_TOOLTIP_DELAY_MS);
         });
         bar.addEventListener('mouseleave', hideGanttTooltip_);
+        // 【2026/9/21追加】バーをタップ（クリック）すると、その予約の編集フォームを
+        // そのまま開けるようにする。作品一覧の詳細シートからバーの元になった予約
+        // （item.b）を渡して開くのと同じopenEditForm関数を使うため、閲覧のみ権限の
+        // 作品（applyEditFormAccessState_）や保存後の一覧再描画など、既存の編集
+        // フォームの挙動がそのまま適用される。バーの上に重ねた作品名（.gantt-bar-label）
+        // はpointer-events:noneにしてあるため、ラベルの上をタップしてもこのバー本体の
+        // clickとして正しく拾われる。横スクロール中の指の動きはブラウザが標準で
+        // タップと区別してくれるため、ここでは特別な判定は不要。
+        bar.addEventListener('click', function () {
+          hideGanttTooltip_();
+          openEditForm(item.b);
+        });
         track.appendChild(bar);
       });
       frag.appendChild(track);
