@@ -721,6 +721,23 @@
     box-shadow: 0 -10px 40px rgba(67,97,238,0.2);
   }
   .sheet-overlay.show .sheet { transform: translateY(0); }
+  /* 【2026/9/21追加】ガントチャートの棒をタップして開く編集フォームは、日付を
+     ちょっと直すだけの「クイック編集」として使われることが多いため、通常の編集
+     フォームより項目を減らし、背景（ガントチャート）が透けて見えるように薄くする。
+     機材名を選び直すボタン類・数量／発注先欄は、下の作品一覧から開いたときの通常の
+     編集フォームでは今まで通り表示するため、body側にこのクラスが付いているときだけ
+     !important付きで隠す（JS側が個別に表示・非表示を切りかえている項目のため、
+     普通の指定だと負けてしまう）。 */
+  body.gantt-quick-edit-mode #form-overlay { background: rgba(20,22,46,0.16); }
+  body.gantt-quick-edit-mode #form-overlay .sheet {
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  body.gantt-quick-edit-mode #f-equipment-rename-btn,
+  body.gantt-quick-edit-mode #edit-mini-cal-btn,
+  body.gantt-quick-edit-mode #single-equipment-fields {
+    display: none !important;
+  }
   .sheet h2 { margin: 0 0 14px; font-size: 17px; font-weight: 800; }
   .sheet-header { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
   .sheet-header h2 { margin: 0; flex: 1; }
@@ -1286,7 +1303,7 @@
   // ここも書き換える。もし設定画面を開いてもこの表示が変わっていない場合は、
   // 貼り替え・保存・GitHub Pagesへの反映・スマホ側のキャッシュのどこかで
   // 最新版が反映されていない可能性が高い。
-  var APP_BUILD_VERSION = '2026-09-21a';
+  var APP_BUILD_VERSION = '2026-09-21b';
   var STORAGE_KEY = 'kizai_mobile_settings_v1';
   var settings = { url: '', token: '' };
   var bookings = [];
@@ -2886,7 +2903,7 @@
         // タップと区別してくれるため、ここでは特別な判定は不要。
         bar.addEventListener('click', function () {
           hideGanttTooltip_();
-          openEditForm(item.b);
+          openEditForm(item.b, { quick: true });
         });
         track.appendChild(bar);
       });
@@ -4039,8 +4056,13 @@
     showFormMiniCalendar_(equipmentName, dateStr);
   }
 
-  function openEditForm(b) {
+  function openEditForm(b, opts) {
     resetFormScroll_();
+    // 【2026/9/21追加】ガントチャートの棒タップから開いたとき（opts.quick）は、
+    // 数量・発注先・機材名の書きかえ・使用状況カレンダーの各項目を隠し、背景の
+    // ガントチャートが透けて見える簡易編集にする。CSS側（body.gantt-quick-edit-mode）
+    // でまとめて非表示・半透明にしているので、ここではクラスの付け外しだけ行う。
+    document.body.classList.toggle('gantt-quick-edit-mode', !!(opts && opts.quick));
     editingRow = b.row;
     // 【2026/8/30追加】修正する前の内容をここで控えておく（「一つ前に戻す」用）。
     editOriginalSnapshot = {
@@ -4501,6 +4523,9 @@
 
   function closeForm() {
     document.getElementById('form-overlay').classList.remove('show');
+    // ガントチャートからのクイック編集モードは、閉じたら必ず解除する
+    // （次に作品一覧などから通常の編集・追加フォームを開いたときに引き継がれないように）。
+    document.body.classList.remove('gantt-quick-edit-mode');
     // 【2026/8/27追加】このフォームが、作品詳細や機材カレンダーなど他のシートの
     // 上から開かれていた場合は、閉じたタイミングでその画面へ戻す（一つ前の
     // 行動に戻る）。保存・削除の成功時もここを通るので、保存後もそのまま
